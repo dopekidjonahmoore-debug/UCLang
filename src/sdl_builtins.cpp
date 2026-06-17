@@ -42,6 +42,8 @@ static Uint8        g_prevKeyState[SDL_NUM_SCANCODES] = {0};
 static Uint32       g_mouseState    = 0;
 static Uint32       g_prevMouseState = 0;
 static int          g_mouseX = 0, g_mouseY = 0;
+static int          g_mousePrevX = 0, g_mousePrevY = 0;
+static int          g_mouseDX = 0, g_mouseDY = 0;
 
 // ─── Texture cache ─────────────────────────────────────────
 static std::map<std::string, SDL_Texture*> g_textures;
@@ -112,7 +114,10 @@ static void frameInputUpdate() {
     for (int i = 0; i < SDL_NUM_SCANCODES; i++)
         g_keyJustState[i] = g_keyState[i];
     g_prevMouseState = g_mouseState;
+    g_mousePrevX = g_mouseX; g_mousePrevY = g_mouseY;
     g_mouseState = SDL_GetMouseState(&g_mouseX, &g_mouseY);
+    g_mouseDX = g_mouseX - g_mousePrevX;
+    g_mouseDY = g_mouseY - g_mousePrevY;
 }
 
 // ─── Get cached texture ────────────────────────────────────
@@ -493,6 +498,14 @@ void register_sdl_natives(
 
     m["input.mouse_y"] = [](const std::vector<Value>&) -> Value {
         return Value((int64_t)g_mouseY);
+    };
+
+    m["input.mouse_dx"] = [](const std::vector<Value>&) -> Value {
+        return Value((int64_t)g_mouseDX);
+    };
+
+    m["input.mouse_dy"] = [](const std::vector<Value>&) -> Value {
+        return Value((int64_t)g_mouseDY);
     };
 
     m["input.mouse_down"] = [](const std::vector<Value>& args) -> Value {
