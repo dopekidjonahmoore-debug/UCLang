@@ -19,3 +19,4 @@ Release/
 x64/
 x86/
 .vs/
+uclang_app.cpp
