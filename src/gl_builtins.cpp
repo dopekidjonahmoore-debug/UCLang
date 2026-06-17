@@ -898,6 +898,37 @@ void register_shader_natives(
     };
 
     // ═══ 2D Overlay ═══════════════════════════════════════════
+    m["overlay.debug"] = [](const std::vector<Value>&) -> Value {
+        if (!g_glReady) return std::monostate{};
+        // Draw a manual 2-color checkerboard as a hardcoded texture
+        int tw = 64, th = 64;
+        std::vector<Uint8> pixels(tw * th * 4);
+        for (int y = 0; y < th; y++)
+            for (int x = 0; x < tw; x++) {
+                int o = (y * tw + x) * 4;
+                bool c = ((x / 8) + (y / 8)) % 2 == 0;
+                pixels[o]=c?255:0; pixels[o+1]=c?0:255; pixels[o+2]=c?0:0; pixels[o+3]=255;
+            }
+        unsigned int tex;
+        pfn_glGenTextures(1, &tex);
+        pfn_glBindTexture(0x0DE1, tex);
+        pfn_glTexParameteri(0x0DE1,0x2802,0x812F);
+        pfn_glTexParameteri(0x0DE1,0x2803,0x812F);
+        pfn_glTexParameteri(0x0DE1,0x2801,0x2601);
+        pfn_glTexParameteri(0x0DE1,0x2800,0x2601);
+        pfn_glTexImage2D(0x0DE1,0,0x1908,tw,th,0,0x1908,0x1401,pixels.data());
+        pfn_glUseProgram(g_overlayShader);
+        int uProj=pfn_glGetUniformLocation(g_overlayShader,"uProj");
+        int uCol =pfn_glGetUniformLocation(g_overlayShader,"uColor");
+        int uTex =pfn_glGetUniformLocation(g_overlayShader,"uTex");
+        glm::mat4 ortho=glm::ortho(0.0f,(float)g_glWidth,(float)g_glHeight,0.0f,-1.0f,1.0f);
+        if(uProj>=0) pfn_glUniformMatrix4fv(uProj,1,0,glm::value_ptr(ortho));
+        if(uCol>=0) pfn_glUniform4f(uCol,1,1,1,1);
+        if(uTex>=0){pfn_glUniform1i(uTex,0);pfn_glActiveTexture(0x84C0);pfn_glBindTexture(0x0DE1,tex);}
+        drawOverlayQuad(100,100,256,256,0,0,1,1);
+        return std::monostate{};
+    };
+
     m["overlay.font"] = [](const std::vector<Value>& args) -> Value {
         if (!g_glReady) return std::monostate{};
         if (args.size() < 2) throw std::runtime_error("Overlay.font(path,size): need 2");
@@ -934,6 +965,26 @@ void register_shader_natives(
         SDL_Color sdlc = {(Uint8)(r*255), (Uint8)(g*255), (Uint8)(b*255), (Uint8)(a*255)};
         SDL_Surface* surf = TTF_RenderUTF8_Blended(g_overlayFont, txt->c_str(), sdlc);
         if (!surf) return std::monostate{};
+        int sw = surf->w, sh = surf->h;
+
+        // Copy pixels into tightly-packed RGBA buffer using SDL_GetRGBA
+        // (handles any source pixel format / byte order / pitch correctly)
+        if (SDL_MUSTLOCK(surf)) SDL_LockSurface(surf);
+        std::vector<Uint8> rgba(sw * sh * 4);
+        for (int y = 0; y < sh; y++) {
+            for (int x = 0; x < sw; x++) {
+                Uint8* sp = (Uint8*)surf->pixels + y * surf->pitch + x * surf->format->BytesPerPixel;
+                Uint32 pixel = 0;
+                memcpy(&pixel, sp, surf->format->BytesPerPixel);
+                Uint8 r,g,b,a;
+                SDL_GetRGBA(pixel, surf->format, &r, &g, &b, &a);
+                int o = (y * sw + x) * 4;
+                rgba[o]=r; rgba[o+1]=g; rgba[o+2]=b; rgba[o+3]=a;
+            }
+        }
+        if (SDL_MUSTLOCK(surf)) SDL_UnlockSurface(surf);
+        SDL_FreeSurface(surf);
+
         unsigned int tex;
         pfn_glGenTextures(1, &tex);
         pfn_glBindTexture(0x0DE1, tex);
@@ -941,10 +992,7 @@ void register_shader_natives(
         pfn_glTexParameteri(0x0DE1, 0x2803, 0x812F);
         pfn_glTexParameteri(0x0DE1, 0x2801, 0x2601);
         pfn_glTexParameteri(0x0DE1, 0x2800, 0x2601);
-        int fmt = (surf->format->BytesPerPixel == 4) ? 0x80E1 : 0x1907;
-        pfn_glTexImage2D(0x0DE1, 0, 0x1908, surf->w, surf->h, 0, fmt, 0x1401, surf->pixels);
-        int sw = surf->w, sh = surf->h;
-        SDL_FreeSurface(surf);
+        pfn_glTexImage2D(0x0DE1, 0, 0x1908, sw, sh, 0, 0x1908, 0x1401, rgba.data());
         pfn_glUseProgram(g_overlayShader);
         float px = gv(args[0]), py = gv(args[1]);
         int fontH = TTF_FontHeight(g_overlayFont);
@@ -956,7 +1004,7 @@ void register_shader_natives(
         if (uProj >= 0) pfn_glUniformMatrix4fv(uProj, 1, 0, glm::value_ptr(ortho));
         if (uColor >= 0) pfn_glUniform4f(uColor, 1, 1, 1, 1);
         if (uTex >= 0) { pfn_glUniform1i(uTex, 0); pfn_glActiveTexture(0x84C0); pfn_glBindTexture(0x0DE1, tex); }
-        drawOverlayQuad(px, py, sw*sc, sh*sc, 0,0,1,1);
+        drawOverlayQuad(px, py, (float)(sw)*sc, (float)(sh)*sc, 0,0,1,1);
         return std::monostate{};
     };
 
