@@ -945,15 +945,18 @@ void register_shader_natives(
         pfn_glTexImage2D(0x0DE1, 0, fmt, surf->w, surf->h, 0, fmt, 0x1401, surf->pixels);
         int sw = surf->w, sh = surf->h;
         SDL_FreeSurface(surf);
+        pfn_glUseProgram(g_overlayShader);
         float px = gv(args[0]), py = gv(args[1]);
         int fontH = TTF_FontHeight(g_overlayFont);
         float sc = gv(args[4]) / fontH;
+        int uProj = pfn_glGetUniformLocation(g_overlayShader, "uProj");
         int uColor = pfn_glGetUniformLocation(g_overlayShader, "uColor");
         int uTex   = pfn_glGetUniformLocation(g_overlayShader, "uTex");
+        glm::mat4 ortho = glm::ortho(0.0f, (float)g_glWidth, (float)g_glHeight, 0.0f, -1.0f, 1.0f);
+        if (uProj >= 0) pfn_glUniformMatrix4fv(uProj, 1, 0, glm::value_ptr(ortho));
         if (uColor >= 0) pfn_glUniform4f(uColor, 1, 1, 1, 1);
         if (uTex >= 0) { pfn_glUniform1i(uTex, 0); pfn_glActiveTexture(0x84C0); pfn_glBindTexture(0x0DE1, tex); }
         drawOverlayQuad(px, py, sw*sc, sh*sc, 0,0,1,1);
-        pfn_glDeleteTextures(1, &tex);
         return std::monostate{};
     };
 
@@ -964,8 +967,12 @@ void register_shader_natives(
         auto* col=std::get_if<std::string>(&args[4]);
         if(!col) throw std::runtime_error("Overlay.rect: args must be number,number,number,number,string");
         float r,g,b,a; parseHexColor4(*col, r, g, b, a);
+        pfn_glUseProgram(g_overlayShader);
+        int uProj = pfn_glGetUniformLocation(g_overlayShader, "uProj");
         int uColor = pfn_glGetUniformLocation(g_overlayShader, "uColor");
         int uTex   = pfn_glGetUniformLocation(g_overlayShader, "uTex");
+        glm::mat4 ortho = glm::ortho(0.0f, (float)g_glWidth, (float)g_glHeight, 0.0f, -1.0f, 1.0f);
+        if (uProj >= 0) pfn_glUniformMatrix4fv(uProj, 1, 0, glm::value_ptr(ortho));
         if (uColor >= 0) pfn_glUniform4f(uColor, r, g, b, a);
         if (uTex >= 0) { pfn_glUniform1i(uTex, 0); pfn_glActiveTexture(0x84C0); pfn_glBindTexture(0x0DE1, g_overlayWhiteTex); }
         drawOverlayQuad(gv(args[0]), gv(args[1]), gv(args[2]), gv(args[3]), 0,0,1,1);
@@ -979,9 +986,13 @@ void register_shader_natives(
         auto* col=std::get_if<std::string>(&args[3]);
         if(!col) throw std::runtime_error("Overlay.circle: args must be number,number,number,string");
         float r,g,b,a; parseHexColor4(*col, r, g, b, a);
+        pfn_glUseProgram(g_overlayShader);
         float cx = gv(args[0]), cy = gv(args[1]), rad = gv(args[2]);
+        int uProj = pfn_glGetUniformLocation(g_overlayShader, "uProj");
         int uColor = pfn_glGetUniformLocation(g_overlayShader, "uColor");
         int uTex   = pfn_glGetUniformLocation(g_overlayShader, "uTex");
+        glm::mat4 ortho = glm::ortho(0.0f, (float)g_glWidth, (float)g_glHeight, 0.0f, -1.0f, 1.0f);
+        if (uProj >= 0) pfn_glUniformMatrix4fv(uProj, 1, 0, glm::value_ptr(ortho));
         if (uColor >= 0) pfn_glUniform4f(uColor, r, g, b, a);
         if (uTex >= 0) { pfn_glUniform1i(uTex, 0); pfn_glActiveTexture(0x84C0); pfn_glBindTexture(0x0DE1, g_overlayWhiteTex); }
         int segments = 32;
