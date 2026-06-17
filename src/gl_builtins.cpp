@@ -941,8 +941,8 @@ void register_shader_natives(
         pfn_glTexParameteri(0x0DE1, 0x2803, 0x812F);
         pfn_glTexParameteri(0x0DE1, 0x2801, 0x2601);
         pfn_glTexParameteri(0x0DE1, 0x2800, 0x2601);
-        int fmt = (surf->format->BytesPerPixel == 4) ? 0x1908 : 0x1907;
-        pfn_glTexImage2D(0x0DE1, 0, fmt, surf->w, surf->h, 0, fmt, 0x1401, surf->pixels);
+        int fmt = (surf->format->BytesPerPixel == 4) ? 0x80E1 : 0x1907;
+        pfn_glTexImage2D(0x0DE1, 0, 0x1908, surf->w, surf->h, 0, fmt, 0x1401, surf->pixels);
         int sw = surf->w, sh = surf->h;
         SDL_FreeSurface(surf);
         pfn_glUseProgram(g_overlayShader);
