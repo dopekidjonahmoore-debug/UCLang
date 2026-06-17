@@ -44,6 +44,7 @@ static Uint32       g_prevMouseState = 0;
 static int          g_mouseX = 0, g_mouseY = 0;
 static int          g_mousePrevX = 0, g_mousePrevY = 0;
 static int          g_mouseDX = 0, g_mouseDY = 0;
+static bool         g_mouseLocked = false;
 
 // ─── Texture cache ─────────────────────────────────────────
 static std::map<std::string, SDL_Texture*> g_textures;
@@ -114,10 +115,14 @@ static void frameInputUpdate() {
     for (int i = 0; i < SDL_NUM_SCANCODES; i++)
         g_keyJustState[i] = g_keyState[i];
     g_prevMouseState = g_mouseState;
-    g_mousePrevX = g_mouseX; g_mousePrevY = g_mouseY;
-    g_mouseState = SDL_GetMouseState(&g_mouseX, &g_mouseY);
-    g_mouseDX = g_mouseX - g_mousePrevX;
-    g_mouseDY = g_mouseY - g_mousePrevY;
+    if (g_mouseLocked) {
+        g_mouseState = SDL_GetRelativeMouseState(&g_mouseDX, &g_mouseDY);
+    } else {
+        g_mousePrevX = g_mouseX; g_mousePrevY = g_mouseY;
+        g_mouseState = SDL_GetMouseState(&g_mouseX, &g_mouseY);
+        g_mouseDX = g_mouseX - g_mousePrevX;
+        g_mouseDY = g_mouseY - g_mousePrevY;
+    }
 }
 
 // ─── Get cached texture ────────────────────────────────────
@@ -163,7 +168,15 @@ void run_sdl_game_loop(const std::function<void()>& updateFn, const std::functio
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) g_sdlQuit = true;
-            if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) g_sdlQuit = true;
+            if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) {
+                if (g_mouseLocked) {
+                    SDL_SetRelativeMouseMode(SDL_FALSE);
+                    SDL_ShowCursor(SDL_ENABLE);
+                    g_mouseLocked = false;
+                } else {
+                    g_sdlQuit = true;
+                }
+            }
         }
         frameInputUpdate();
         if (g_sdlQuit) break;
@@ -506,6 +519,23 @@ void register_sdl_natives(
 
     m["input.mouse_dy"] = [](const std::vector<Value>&) -> Value {
         return Value((int64_t)g_mouseDY);
+    };
+
+    m["input.mouse_lock"] = [](const std::vector<Value>& args) -> Value {
+        bool lock = true;
+        if (!args.empty()) {
+            if (auto* b = std::get_if<bool>(&args[0])) lock = *b;
+            else if (auto* i = std::get_if<int64_t>(&args[0])) lock = *i != 0;
+        }
+        if (lock) {
+            SDL_SetRelativeMouseMode(SDL_TRUE);
+            SDL_ShowCursor(SDL_DISABLE);
+        } else {
+            SDL_SetRelativeMouseMode(SDL_FALSE);
+            SDL_ShowCursor(SDL_ENABLE);
+        }
+        g_mouseLocked = lock;
+        return std::monostate{};
     };
 
     m["input.mouse_down"] = [](const std::vector<Value>& args) -> Value {
