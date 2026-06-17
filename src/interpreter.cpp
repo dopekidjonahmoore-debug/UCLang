@@ -1,4 +1,5 @@
 #include "interpreter.h"
+#include "core.h"
 #include "lexer.h"
 #include "parser.h"
 #include "sdl_builtins.h"
@@ -295,7 +296,8 @@ void Interpreter::registerBuiltins() {
         if (args.empty()) throw std::runtime_error("run_file(path): need file path");
         auto* path = std::get_if<std::string>(&args[0]);
         if (!path) throw std::runtime_error("run_file: path must be string");
-        std::ifstream f(*path);
+        std::string resolved = UCLang::resolveUclangPath(*path);
+        std::ifstream f(resolved);
         if (!f) throw std::runtime_error("run_file: cannot open " + *path);
         std::stringstream buf; buf << f.rdbuf();
         std::string src = buf.str();

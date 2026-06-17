@@ -36,4 +36,8 @@ char* uclang_tokenize(const char* source);
 
 #ifdef __cplusplus
 }
+#include <string>
+namespace UCLang {
+    std::string resolveUclangPath(const std::string& path);
+}
 #endif

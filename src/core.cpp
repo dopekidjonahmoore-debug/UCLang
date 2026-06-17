@@ -9,6 +9,9 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <algorithm>
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 
 struct UCLangVM {
     UCLangOutputFn outputFn = nullptr;
@@ -19,6 +22,31 @@ struct UCLangVM {
 };
 
 static thread_local std::string tls_error;
+
+static std::string getExeDirectory() {
+    wchar_t buf[MAX_PATH];
+    DWORD len = GetModuleFileNameW(nullptr, buf, MAX_PATH);
+    if (len == 0 || len >= MAX_PATH) return "";
+    char mbBuf[MAX_PATH];
+    int mbLen = WideCharToMultiByte(CP_UTF8, 0, buf, (int)len, mbBuf, MAX_PATH, nullptr, nullptr);
+    if (mbLen <= 0) return "";
+    std::string exePath(mbBuf, mbLen);
+    size_t pos = exePath.find_last_of("\\/");
+    if (pos != std::string::npos)
+        return exePath.substr(0, pos + 1);
+    return "";
+}
+
+std::string UCLang::resolveUclangPath(const std::string& path) {
+    std::ifstream f(path);
+    if (f.is_open()) return path;
+    std::string exeDir = getExeDirectory();
+    if (exeDir.empty()) return path;
+    std::string alt = exeDir + path;
+    std::ifstream f2(alt);
+    if (f2.is_open()) return alt;
+    return path;
+}
 
 UCLangVM* uclang_vm_new(void) {
     return new UCLangVM();
@@ -95,7 +123,8 @@ int uclang_vm_execute(UCLangVM* vm, const char* source, char** output) {
 }
 
 int uclang_vm_execute_file(UCLangVM* vm, const char* path, char** output) {
-    std::ifstream file(path);
+    std::string resolved = UCLang::resolveUclangPath(path);
+    std::ifstream file(resolved);
     if (!file.is_open()) {
         tls_error = "cannot open file";
         vm->lastError = "cannot open file";
