@@ -1,11 +1,13 @@
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <SDL_image.h>
+#include <SDL_ttf.h>
 #include <SDL_opengl.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include "gl_builtins.h"
+#include "core.h"
 #include "interpreter.h"
 #include <cstdio>
 #include <cstring>
@@ -65,6 +67,7 @@ typedef void (APIENTRY *PFN_DRAWELEMENTS)(unsigned int, int, unsigned int, const
 typedef int (APIENTRY *PFN_GETATTRIBLOCATION)(unsigned int, const char*);
 typedef void (APIENTRY *PFN_ACTIVETEXTURE)(unsigned int);
 typedef void (APIENTRY *PFN_UNIFORM4F)(int, float, float, float, float);
+typedef void (APIENTRY *PFN_BLENDFUNC)(unsigned int, unsigned int);
 
 static PFN_GENVERTEXARRAYS      pfn_glGenVertexArrays;
 static PFN_BINDVERTEXARRAY      pfn_glBindVertexArray;
@@ -109,6 +112,7 @@ static PFN_DRAWELEMENTS         pfn_glDrawElements;
 static PFN_GETATTRIBLOCATION    pfn_glGetAttribLocation;
 static PFN_ACTIVETEXTURE        pfn_glActiveTexture;
 static PFN_UNIFORM4F            pfn_glUniform4f;
+static PFN_BLENDFUNC            pfn_glBlendFunc;
 
 #define LOAD_GL(pfn, name) do { pfn = (decltype(pfn))SDL_GL_GetProcAddress(name); if (!pfn) throw std::runtime_error("Failed to load GL: " name); } while(0)
 
@@ -156,6 +160,7 @@ static bool loadGLFunctions() {
     LOAD_GL(pfn_glGetAttribLocation, "glGetAttribLocation");
     LOAD_GL(pfn_glActiveTexture, "glActiveTexture");
     LOAD_GL(pfn_glUniform4f, "glUniform4f");
+    LOAD_GL(pfn_glBlendFunc, "glBlendFunc");
     return true;
 }
 
@@ -181,6 +186,25 @@ static float      g_lightAmbientIntensity = 0.3f;
 static glm::vec3  g_lightDir(-1,-1,-1);
 static glm::vec3  g_lightColor(1,1,1);
 static float      g_lightDirIntensity = 0.8f;
+
+// ═══════════════════════════════════════════════════════════════
+//  2D Overlay state
+// ═══════════════════════════════════════════════════════════════
+static TTF_Font*    g_overlayFont    = nullptr;
+static unsigned int g_overlayVAO     = 0;
+static unsigned int g_overlayVBO     = 0;
+static unsigned int g_overlayShader  = 0;
+static unsigned int g_overlayWhiteTex = 0;
+static bool         g_overlayReady   = false;
+
+static void parseHexColor4(const std::string& hex, float& r, float& g, float& b, float& a) {
+    r=1;g=1;b=1;a=1;
+    if (hex.empty() || hex[0]!='#') return;
+    unsigned int rr=0,gg=0,bb=0,aa=255;
+    if (hex.size()>=9) sscanf_s(hex.c_str()+1, "%02x%02x%02x%02x", &rr,&gg,&bb,&aa);
+    else if (hex.size()>=7) sscanf_s(hex.c_str()+1, "%02x%02x%02x", &rr,&gg,&bb);
+    r=rr/255.0f; g=gg/255.0f; b=bb/255.0f; a=aa/255.0f;
+}
 
 // ═══════════════════════════════════════════════════════════════
 //  Default shaders (embedded GLSL strings)
@@ -269,6 +293,67 @@ static unsigned int createProgram(const char* vertSrc, const char* fragSrc) {
     }
     pfn_glDeleteShader(vs); pfn_glDeleteShader(fs);
     return prog;
+}
+
+static const char* g_overlayVertSrc = R"(
+#version 330 core
+layout(location=0) in vec2 aPos;
+layout(location=1) in vec2 aUV;
+out vec2 fragUV;
+uniform mat4 uProj;
+void main(){
+    fragUV = aUV;
+    gl_Position = uProj * vec4(aPos, 0.0, 1.0);
+}
+)";
+
+static const char* g_overlayFragSrc = R"(
+#version 330 core
+in vec2 fragUV;
+out vec4 fragColor;
+uniform sampler2D uTex;
+uniform vec4 uColor;
+void main(){
+    fragColor = texture(uTex, fragUV) * uColor;
+}
+)";
+
+static void initOverlay() {
+    if (g_overlayReady) return;
+    g_overlayShader = createProgram(g_overlayVertSrc, g_overlayFragSrc);
+    float verts[] = {0,0, 0,0, 1,0, 1,0, 1,1, 0,1, 0,1, 0,0};
+    pfn_glGenVertexArrays(1, &g_overlayVAO);
+    pfn_glGenBuffers(1, &g_overlayVBO);
+    pfn_glBindVertexArray(g_overlayVAO);
+    pfn_glBindBuffer(0x8892, g_overlayVBO);
+    pfn_glBufferData(0x8892, sizeof(verts), verts, 0x88E4);
+    int stride = 4*sizeof(float);
+    pfn_glVertexAttribPointer(0, 2, 0x1406, 0, stride, (void*)0);
+    pfn_glEnableVertexAttribArray(0);
+    pfn_glVertexAttribPointer(1, 2, 0x1406, 0, stride, (void*)(2*sizeof(float)));
+    pfn_glEnableVertexAttribArray(1);
+    pfn_glBindVertexArray(0);
+    unsigned char px[4] = {255,255,255,255};
+    pfn_glGenTextures(1, &g_overlayWhiteTex);
+    pfn_glBindTexture(0x0DE1, g_overlayWhiteTex);
+    pfn_glTexImage2D(0x0DE1, 0, 0x1908, 1, 1, 0, 0x1908, 0x1401, px);
+    g_overlayReady = true;
+}
+
+static void drawOverlayQuad(float x, float y, float w, float h, float u0, float v0, float u1, float v1) {
+    float verts[] = {
+        x,   y,   u0, v0,
+        x+w, y,   u1, v0,
+        x+w, y+h, u1, v1,
+        x,   y,   u0, v0,
+        x+w, y+h, u1, v1,
+        x,   y+h, u0, v1,
+    };
+    pfn_glBindBuffer(0x8892, g_overlayVBO);
+    pfn_glBufferData(0x8892, sizeof(verts), verts, 0x88E4);
+    pfn_glBindVertexArray(g_overlayVAO);
+    pfn_glDrawArrays(0x0004, 0, 6);
+    pfn_glBindVertexArray(0);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -494,6 +579,10 @@ void register_gl_natives(
 
         // Create default white texture
         loadGLTexture("__white__");
+
+        // Init SDL_ttf for overlay text
+        if (TTF_Init() < 0) throw std::runtime_error(std::string("TTF_Init: ") + TTF_GetError());
+        initOverlay();
         return std::monostate{};
     };
 
@@ -805,6 +894,111 @@ void register_shader_natives(
         else
             pfn_glDrawArrays(0x0004, 0, me.vertexCount); // GL_TRIANGLES
         pfn_glBindVertexArray(0);
+        return std::monostate{};
+    };
+
+    // ═══ 2D Overlay ═══════════════════════════════════════════
+    m["overlay.font"] = [](const std::vector<Value>& args) -> Value {
+        if (!g_glReady) return std::monostate{};
+        if (args.size() < 2) throw std::runtime_error("Overlay.font(path,size): need 2");
+        auto* path = std::get_if<std::string>(&args[0]);
+        auto* sz  = std::get_if<int64_t>(&args[1]);
+        if (!path || !sz) throw std::runtime_error("Overlay.font: args must be string,int");
+        if (g_overlayFont) TTF_CloseFont(g_overlayFont);
+        std::string fp = resolveUclangPath(*path);
+        g_overlayFont = TTF_OpenFont(fp.c_str(), (int)*sz);
+        if (!g_overlayFont) throw std::runtime_error(std::string("Overlay.font: ") + TTF_GetError());
+        return std::monostate{};
+    };
+
+    m["overlay.begin"] = [](const std::vector<Value>&) -> Value {
+        if (!g_glReady) return std::monostate{};
+        pfn_glDisable(0x0B71); // GL_DEPTH_TEST
+        pfn_glEnable(0x0BE2);  // GL_BLEND
+        pfn_glBlendFunc(0x0302, 0x0303); // GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA
+        pfn_glUseProgram(g_overlayShader);
+        glm::mat4 ortho = glm::ortho(0.0f, (float)g_glWidth, (float)g_glHeight, 0.0f, -1.0f, 1.0f);
+        int uProj = pfn_glGetUniformLocation(g_overlayShader, "uProj");
+        if (uProj >= 0) pfn_glUniformMatrix4fv(uProj, 1, 0, glm::value_ptr(ortho));
+        return std::monostate{};
+    };
+
+    m["overlay.text"] = [](const std::vector<Value>& args) -> Value {
+        if (!g_glReady || !g_overlayFont) return std::monostate{};
+        if (args.size() < 5) throw std::runtime_error("Overlay.text(x,y,text,hexcolor,size): need 5");
+        auto gv = [](const Value& v)->float{if(auto*f=std::get_if<double>(&v))return(float)*f;if(auto*i=std::get_if<int64_t>(&v))return(float)*i;return 0;};
+        auto* txt = std::get_if<std::string>(&args[2]);
+        auto* col = std::get_if<std::string>(&args[3]);
+        if (!txt || !col) throw std::runtime_error("Overlay.text: args must be number,number,string,string,number");
+        float r,g,b,a; parseHexColor4(*col, r, g, b, a);
+        SDL_Color sdlc = {(Uint8)(r*255), (Uint8)(g*255), (Uint8)(b*255), (Uint8)(a*255)};
+        SDL_Surface* surf = TTF_RenderUTF8_Blended(g_overlayFont, txt->c_str(), sdlc);
+        if (!surf) return std::monostate{};
+        unsigned int tex;
+        pfn_glGenTextures(1, &tex);
+        pfn_glBindTexture(0x0DE1, tex);
+        pfn_glTexParameteri(0x0DE1, 0x2802, 0x812F);
+        pfn_glTexParameteri(0x0DE1, 0x2803, 0x812F);
+        pfn_glTexParameteri(0x0DE1, 0x2801, 0x2601);
+        pfn_glTexParameteri(0x0DE1, 0x2800, 0x2601);
+        int fmt = (surf->format->BytesPerPixel == 4) ? 0x1908 : 0x1907;
+        pfn_glTexImage2D(0x0DE1, 0, fmt, surf->w, surf->h, 0, fmt, 0x1401, surf->pixels);
+        int sw = surf->w, sh = surf->h;
+        SDL_FreeSurface(surf);
+        float px = gv(args[0]), py = gv(args[1]);
+        int fontH = TTF_FontHeight(g_overlayFont);
+        float sc = gv(args[4]) / fontH;
+        int uColor = pfn_glGetUniformLocation(g_overlayShader, "uColor");
+        int uTex   = pfn_glGetUniformLocation(g_overlayShader, "uTex");
+        if (uColor >= 0) pfn_glUniform4f(uColor, 1, 1, 1, 1);
+        if (uTex >= 0) { pfn_glUniform1i(uTex, 0); pfn_glActiveTexture(0x84C0); pfn_glBindTexture(0x0DE1, tex); }
+        drawOverlayQuad(px, py, sw*sc, sh*sc, 0,0,1,1);
+        pfn_glDeleteTextures(1, &tex);
+        return std::monostate{};
+    };
+
+    m["overlay.rect"] = [](const std::vector<Value>& args) -> Value {
+        if (!g_glReady) return std::monostate{};
+        if (args.size() < 5) throw std::runtime_error("Overlay.rect(x,y,w,h,hexcolor): need 5");
+        auto gv=[](const Value& v)->float{if(auto*f=std::get_if<double>(&v))return(float)*f;if(auto*i=std::get_if<int64_t>(&v))return(float)*i;return 0;};
+        auto* col=std::get_if<std::string>(&args[4]);
+        if(!col) throw std::runtime_error("Overlay.rect: args must be number,number,number,number,string");
+        float r,g,b,a; parseHexColor4(*col, r, g, b, a);
+        int uColor = pfn_glGetUniformLocation(g_overlayShader, "uColor");
+        int uTex   = pfn_glGetUniformLocation(g_overlayShader, "uTex");
+        if (uColor >= 0) pfn_glUniform4f(uColor, r, g, b, a);
+        if (uTex >= 0) { pfn_glUniform1i(uTex, 0); pfn_glActiveTexture(0x84C0); pfn_glBindTexture(0x0DE1, g_overlayWhiteTex); }
+        drawOverlayQuad(gv(args[0]), gv(args[1]), gv(args[2]), gv(args[3]), 0,0,1,1);
+        return std::monostate{};
+    };
+
+    m["overlay.circle"] = [](const std::vector<Value>& args) -> Value {
+        if (!g_glReady) return std::monostate{};
+        if (args.size() < 4) throw std::runtime_error("Overlay.circle(x,y,radius,hexcolor): need 4");
+        auto gv=[](const Value& v)->float{if(auto*f=std::get_if<double>(&v))return(float)*f;if(auto*i=std::get_if<int64_t>(&v))return(float)*i;return 0;};
+        auto* col=std::get_if<std::string>(&args[3]);
+        if(!col) throw std::runtime_error("Overlay.circle: args must be number,number,number,string");
+        float r,g,b,a; parseHexColor4(*col, r, g, b, a);
+        float cx = gv(args[0]), cy = gv(args[1]), rad = gv(args[2]);
+        int uColor = pfn_glGetUniformLocation(g_overlayShader, "uColor");
+        int uTex   = pfn_glGetUniformLocation(g_overlayShader, "uTex");
+        if (uColor >= 0) pfn_glUniform4f(uColor, r, g, b, a);
+        if (uTex >= 0) { pfn_glUniform1i(uTex, 0); pfn_glActiveTexture(0x84C0); pfn_glBindTexture(0x0DE1, g_overlayWhiteTex); }
+        int segments = 32;
+        for (int i = 0; i < segments; i++) {
+            float a1 = 6.283185f * i / segments;
+            float a2 = 6.283185f * (i + 1) / segments;
+            float verts[] = {
+                cx, cy, 0,0,
+                cx + cos(a1)*rad, cy + sin(a1)*rad, 0,0,
+                cx + cos(a2)*rad, cy + sin(a2)*rad, 0,0,
+            };
+            pfn_glBindBuffer(0x8892, g_overlayVBO);
+            pfn_glBufferData(0x8892, sizeof(verts), verts, 0x88E4);
+            pfn_glBindVertexArray(g_overlayVAO);
+            pfn_glDrawArrays(0x0004, 0, 3);
+            pfn_glBindVertexArray(0);
+        }
         return std::monostate{};
     };
 }
