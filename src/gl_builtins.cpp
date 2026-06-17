@@ -743,7 +743,6 @@ void register_shader_natives(
     };
 
     m["draw3d.end"] = [](const std::vector<Value>&) -> Value {
-        if(g_glWindow) SDL_GL_SwapWindow(g_glWindow);
         return std::monostate{};
     };
 
