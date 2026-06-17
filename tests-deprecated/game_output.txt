@@ -1,0 +1,96 @@
+  PARSE ERROR at Ln 17, sync to next .
+  PARSE ERROR at Ln 17, sync to next .
+  PARSE ERROR at Ln 18, sync to next .
+  PARSE ERROR at Ln 18, sync to next .
+  PARSE ERROR at Ln 19, sync to next .
+  PARSE ERROR at Ln 19, sync to next .
+  PARSE ERROR at Ln 20, sync to next .
+  PARSE ERROR at Ln 20, sync to next .
+  PARSE ERROR at Ln 28, sync to next .
+  PARSE ERROR at Ln 28, sync to next .
+  PARSE ERROR at Ln 29, sync to next .
+  PARSE ERROR at Ln 29, sync to next .
+  PARSE ERROR at Ln 30, sync to next .
+  PARSE ERROR at Ln 30, sync to next .
+  PARSE ERROR at Ln 31, sync to next .
+  PARSE ERROR at Ln 31, sync to next .
+  PARSE ERROR at Ln 54, sync to next .
+  PARSING FUNC: draw
+  PARSE ERROR at Ln 57, sync to next .
+  PARSE ERROR at Ln 92, sync to next .
+  PARSE ERROR at Ln 93, sync to next .
+  TOTAL STMTS PARSED: 40
+  PARSING FUNC: tween_create
+  FUNC 'tween_create' body done (stmts: 1), closing OK
+  PUSH FUNC tween_create (total 1)
+  PARSING FUNC: tween_update
+  FUNC 'tween_update' body done (stmts: 8), closing OK
+  PUSH FUNC tween_update (total 2)
+  PARSING FUNC: tween_value
+  FUNC 'tween_value' body done (stmts: 1), closing OK
+  PUSH FUNC tween_value (total 3)
+  PARSING FUNC: tween_done
+  FUNC 'tween_done' body done (stmts: 1), closing OK
+  PUSH FUNC tween_done (total 4)
+  PARSING FUNC: tween_reset
+  FUNC 'tween_reset' body done (stmts: 3), closing OK
+  PUSH FUNC tween_reset (total 5)
+  PARSING FUNC: ease_apply
+  FUNC 'ease_apply' body done (stmts: 10), closing OK
+  PUSH FUNC ease_apply (total 6)
+  PARSING FUNC: ease_linear
+  FUNC 'ease_linear' body done (stmts: 1), closing OK
+  PUSH FUNC ease_linear (total 7)
+  PARSING FUNC: ease_quad_in
+  FUNC 'ease_quad_in' body done (stmts: 1), closing OK
+  PUSH FUNC ease_quad_in (total 8)
+  PARSING FUNC: ease_quad_out
+  FUNC 'ease_quad_out' body done (stmts: 1), closing OK
+  PUSH FUNC ease_quad_out (total 9)
+  PARSING FUNC: ease_cubic_in
+  FUNC 'ease_cubic_in' body done (stmts: 1), closing OK
+  PUSH FUNC ease_cubic_in (total 10)
+  PARSING FUNC: ease_cubic_out
+  FUNC 'ease_cubic_out' body done (stmts: 2), closing OK
+  PUSH FUNC ease_cubic_out (total 11)
+  PARSING FUNC: ease_sine_in
+  FUNC 'ease_sine_in' body done (stmts: 1), closing OK
+  PUSH FUNC ease_sine_in (total 12)
+  PARSING FUNC: ease_sine_out
+  FUNC 'ease_sine_out' body done (stmts: 1), closing OK
+  PUSH FUNC ease_sine_out (total 13)
+  PARSING FUNC: ease_elastic_out
+  FUNC 'ease_elastic_out' body done (stmts: 2), closing OK
+  PUSH FUNC ease_elastic_out (total 14)
+  PARSING FUNC: ease_bounce_out
+  FUNC 'ease_bounce_out' body done (stmts: 5), closing OK
+  PUSH FUNC ease_bounce_out (total 15)
+  TOTAL STMTS PARSED: 15
+  PARSING FUNC: particle_create
+  FUNC 'particle_create' body done (stmts: 1), closing OK
+  PUSH FUNC particle_create (total 1)
+  PARSING FUNC: particle_update
+  FUNC 'particle_update' body done (stmts: 7), closing OK
+  PUSH FUNC particle_update (total 2)
+  PARSING FUNC: particle_draw
+  FUNC 'particle_draw' body done (stmts: 3), closing OK
+  PUSH FUNC particle_draw (total 3)
+  PARSING FUNC: particle_alive
+  FUNC 'particle_alive' body done (stmts: 1), closing OK
+  PUSH FUNC particle_alive (total 4)
+  PARSING FUNC: particle_burst
+  FUNC 'particle_burst' body done (stmts: 4), closing OK
+  PUSH FUNC particle_burst (total 5)
+  PARSING FUNC: particle_system_new
+  FUNC 'particle_system_new' body done (stmts: 1), closing OK
+  PUSH FUNC particle_system_new (total 6)
+  PARSING FUNC: particle_system_update
+  FUNC 'particle_system_update' body done (stmts: 6), closing OK
+  PUSH FUNC particle_system_update (total 7)
+  PARSING FUNC: particle_system_draw
+  FUNC 'particle_system_draw' body done (stmts: 3), closing OK
+  PUSH FUNC particle_system_draw (total 8)
+  PARSING FUNC: particle_system_emit
+  FUNC 'particle_system_emit' body done (stmts: 7), closing OK
+  PUSH FUNC particle_system_emit (total 9)
+  TOTAL STMTS PARSED: 9

@@ -1,0 +1,8 @@
+  PARSE ERROR at Ln 24, sync to next .
+  PARSE ERROR at Ln 24, sync to next .
+  PARSE ERROR at Ln 25, sync to next .
+  PARSING FUNC: draw
+  PARSE ERROR at Ln 28, sync to next .
+  PARSE ERROR at Ln 49, sync to next .
+  PARSE ERROR at Ln 50, sync to next .
+  TOTAL STMTS PARSED: 15
