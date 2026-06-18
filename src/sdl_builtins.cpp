@@ -549,15 +549,35 @@ void register_sdl_natives(
         return Value((g_mouseState&mask)!=0);
     };
 
-    m["input.mouse_just"] = [](const std::vector<Value>& args) -> Value {
-        if (args.empty()) throw std::runtime_error("Input.mouse_just(button): need button name");
+    m["input.key_just_released"] = [](const std::vector<Value>& args) -> Value {
+        if (args.empty()) throw std::runtime_error("Input.key_just_released(name): need key name");
         auto* name=std::get_if<std::string>(&args[0]);
-        if(!name) throw std::runtime_error("Input.mouse_just: arg must be string");
+        if(!name) throw std::runtime_error("Input.key_just_released: arg must be string");
+        int sc=lookupKey(*name);
+        if(sc<0) return Value(false);
+        return Value(!g_keyJustState[sc] && g_prevKeyState[sc]!=0);
+    };
+
+    m["input.mouse_just_pressed"] = [](const std::vector<Value>& args) -> Value {
+        if (args.empty()) throw std::runtime_error("Input.mouse_just_pressed(button): need button name");
+        auto* name=std::get_if<std::string>(&args[0]);
+        if(!name) throw std::runtime_error("Input.mouse_just_pressed: arg must be string");
         Uint32 mask=0;
         if(*name=="left") mask=SDL_BUTTON_LMASK;
         else if(*name=="right") mask=SDL_BUTTON_RMASK;
         else if(*name=="middle") mask=SDL_BUTTON_MMASK;
         return Value(((g_mouseState&mask)!=0) && ((g_prevMouseState&mask)==0));
+    };
+
+    m["input.mouse_just_released"] = [](const std::vector<Value>& args) -> Value {
+        if (args.empty()) throw std::runtime_error("Input.mouse_just_released(button): need button name");
+        auto* name=std::get_if<std::string>(&args[0]);
+        if(!name) throw std::runtime_error("Input.mouse_just_released: arg must be string");
+        Uint32 mask=0;
+        if(*name=="left") mask=SDL_BUTTON_LMASK;
+        else if(*name=="right") mask=SDL_BUTTON_RMASK;
+        else if(*name=="middle") mask=SDL_BUTTON_MMASK;
+        return Value(((g_prevMouseState&mask)!=0) && ((g_mouseState&mask)==0));
     };
 
     // ═══ Camera 2D ══════════════════════════════════════════
