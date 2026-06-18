@@ -899,33 +899,6 @@ void register_shader_natives(
 
     // ═══ 2D Overlay ═══════════════════════════════════════════
     m["overlay.debug"] = [](const std::vector<Value>&) -> Value {
-        if (!g_glReady) return std::monostate{};
-        // Draw a manual 2-color checkerboard as a hardcoded texture
-        int tw = 64, th = 64;
-        std::vector<Uint8> pixels(tw * th * 4);
-        for (int y = 0; y < th; y++)
-            for (int x = 0; x < tw; x++) {
-                int o = (y * tw + x) * 4;
-                bool c = ((x / 8) + (y / 8)) % 2 == 0;
-                pixels[o]=c?255:0; pixels[o+1]=c?0:255; pixels[o+2]=c?0:0; pixels[o+3]=255;
-            }
-        unsigned int tex;
-        pfn_glGenTextures(1, &tex);
-        pfn_glBindTexture(0x0DE1, tex);
-        pfn_glTexParameteri(0x0DE1,0x2802,0x812F);
-        pfn_glTexParameteri(0x0DE1,0x2803,0x812F);
-        pfn_glTexParameteri(0x0DE1,0x2801,0x2601);
-        pfn_glTexParameteri(0x0DE1,0x2800,0x2601);
-        pfn_glTexImage2D(0x0DE1,0,0x1908,tw,th,0,0x1908,0x1401,pixels.data());
-        pfn_glUseProgram(g_overlayShader);
-        int uProj=pfn_glGetUniformLocation(g_overlayShader,"uProj");
-        int uCol =pfn_glGetUniformLocation(g_overlayShader,"uColor");
-        int uTex =pfn_glGetUniformLocation(g_overlayShader,"uTex");
-        glm::mat4 ortho=glm::ortho(0.0f,(float)g_glWidth,(float)g_glHeight,0.0f,-1.0f,1.0f);
-        if(uProj>=0) pfn_glUniformMatrix4fv(uProj,1,0,glm::value_ptr(ortho));
-        if(uCol>=0) pfn_glUniform4f(uCol,1,1,1,1);
-        if(uTex>=0){pfn_glUniform1i(uTex,0);pfn_glActiveTexture(0x84C0);pfn_glBindTexture(0x0DE1,tex);}
-        drawOverlayQuad(100,100,256,256,0,0,1,1);
         return std::monostate{};
     };
 

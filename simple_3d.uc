@@ -1,9 +1,7 @@
 Window.open_3d("Simple 3D", 1024, 768).
-
 Overlay.font("assets/font.ttf", 24).
 
 Mesh.load_primitive("cube", "cube").
-
 Camera3D.set_fov(60).
 
 rot == 0.0.
