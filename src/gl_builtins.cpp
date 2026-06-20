@@ -20,6 +20,7 @@
 #include <stdexcept>
 
 namespace UCLang {
+extern SDL_Window* g_window;
 
 // ═══════════════════════════════════════════════════════════════
 //  OpenGL function pointer typedefs & globals
@@ -169,7 +170,7 @@ static bool loadGLFunctions() {
 // ═══════════════════════════════════════════════════════════════
 SDL_Window*    g_glWindow   = nullptr;
 static SDL_GLContext  g_glContext  = nullptr;
-static int            g_glWidth=0, g_glHeight=0;
+int            g_glWidth=0, g_glHeight=0;
 static bool           g_glReady    = false;
 
 // Camera 3D
@@ -556,7 +557,7 @@ void register_gl_natives(
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
         SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
         g_glWindow = SDL_CreateWindow(title->c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-            (int)*w, (int)*h, SDL_WINDOW_OPENGL|SDL_WINDOW_SHOWN);
+            (int)*w, (int)*h, SDL_WINDOW_OPENGL|SDL_WINDOW_SHOWN|SDL_WINDOW_RESIZABLE);
         if (!g_glWindow) { SDL_Quit(); throw std::runtime_error(std::string("SDL_CreateWindow: ")+SDL_GetError()); }
         g_glContext = SDL_GL_CreateContext(g_glWindow);
         if (!g_glContext) { SDL_DestroyWindow(g_glWindow); g_glWindow=nullptr; SDL_Quit(); throw std::runtime_error("SDL_GL_CreateContext failed"); }
@@ -583,6 +584,32 @@ void register_gl_natives(
         // Init SDL_ttf for overlay text
         if (TTF_Init() < 0) throw std::runtime_error(std::string("TTF_Init: ") + TTF_GetError());
         initOverlay();
+        return std::monostate{};
+    };
+
+    // ═══ Window.set_size ════════════════════════════════════
+    m["window.set_size"] = [](const std::vector<Value>& args) -> Value {
+        if (args.size() < 2) throw std::runtime_error("Window.set_size(w,h): need 2 args");
+        auto toInt = [](const Value& v)->int{if(auto*f=std::get_if<double>(&v))return(int)*f;if(auto*i=std::get_if<int64_t>(&v))return(int)*i;throw std::runtime_error("Window.set_size: expected number");};
+        int w = toInt(args[0]), h = toInt(args[1]);
+        SDL_Window* win = g_glWindow ? g_glWindow : g_window;
+        if (!win) throw std::runtime_error("Window.set_size: no window");
+        SDL_SetWindowSize(win, w, h);
+        if (g_glWindow) { g_glWidth = w; g_glHeight = h; pfn_glViewport(0,0,w,h); }
+        return std::monostate{};
+    };
+
+    // ═══ Window.set_fullscreen ══════════════════════════════
+    m["window.set_fullscreen"] = [](const std::vector<Value>& args) -> Value {
+        SDL_Window* win = g_glWindow ? g_glWindow : g_window;
+        if (!win) throw std::runtime_error("Window.set_fullscreen: no window");
+        bool fs = false;
+        if (!args.empty()) {
+            if (auto* b = std::get_if<int64_t>(&args[0])) fs = *b != 0;
+            else if (auto* b = std::get_if<bool>(&args[0])) fs = *b;
+        }
+        SDL_SetWindowFullscreen(win, fs ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+        if (fs && g_glWindow) { int w, h; SDL_GetWindowSize(win, &w, &h); g_glWidth = w; g_glHeight = h; pfn_glViewport(0,0,w,h); }
         return std::monostate{};
     };
 

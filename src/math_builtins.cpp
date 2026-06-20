@@ -5,6 +5,9 @@
 #include <ctime>
 #include <random>
 #include <stdexcept>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 namespace UCLang {
 
@@ -188,6 +191,78 @@ void register_math_natives(
         int64_t px=gv(args[3]),py=gv(args[4]);
         int64_t dx=px-cx,dy=py-cy;
         return Value(dx*dx+dy*dy<=cr*cr);
+    };
+
+    // ═══ Native Math Types ═══════════════════════════════════
+    m["vec3"] = [](const std::vector<Value>& args) -> Value {
+        double x=0,y=0,z=0;
+        if(args.size()>=1){auto*i=std::get_if<int64_t>(&args[0]);if(i)x=(double)*i;else{auto*f=std::get_if<double>(&args[0]);if(f)x=*f;}}
+        if(args.size()>=2){auto*i=std::get_if<int64_t>(&args[1]);if(i)y=(double)*i;else{auto*f=std::get_if<double>(&args[1]);if(f)y=*f;}}
+        if(args.size()>=3){auto*i=std::get_if<int64_t>(&args[2]);if(i)z=(double)*i;else{auto*f=std::get_if<double>(&args[2]);if(f)z=*f;}}
+        return Value(glm::vec3((float)x,(float)y,(float)z));
+    };
+    m["quat"] = [](const std::vector<Value>& args) -> Value {
+        double x=0,y=0,z=0,w=0;
+        if(args.size()>=1){auto*i=std::get_if<int64_t>(&args[0]);if(i)x=(double)*i;else{auto*f=std::get_if<double>(&args[0]);if(f)x=*f;}}
+        if(args.size()>=2){auto*i=std::get_if<int64_t>(&args[1]);if(i)y=(double)*i;else{auto*f=std::get_if<double>(&args[1]);if(f)y=*f;}}
+        if(args.size()>=3){auto*i=std::get_if<int64_t>(&args[2]);if(i)z=(double)*i;else{auto*f=std::get_if<double>(&args[2]);if(f)z=*f;}}
+        if(args.size()>=4){auto*i=std::get_if<int64_t>(&args[3]);if(i)w=(double)*i;else{auto*f=std::get_if<double>(&args[3]);if(f)w=*f;}}
+        return Value(glm::quat((float)w,(float)x,(float)y,(float)z));
+    };
+    m["mat4"] = [](const std::vector<Value>& args) -> Value {
+        (void)args;
+        return Value(glm::mat4(1.0f));
+    };
+    m["mat4.translate"] = [](const std::vector<Value>& args) -> Value {
+        double x=0,y=0,z=0;
+        if(args.size()>=1){auto*i=std::get_if<int64_t>(&args[0]);if(i)x=(double)*i;else{auto*f=std::get_if<double>(&args[0]);if(f)x=*f;}}
+        if(args.size()>=2){auto*i=std::get_if<int64_t>(&args[1]);if(i)y=(double)*i;else{auto*f=std::get_if<double>(&args[1]);if(f)y=*f;}}
+        if(args.size()>=3){auto*i=std::get_if<int64_t>(&args[2]);if(i)z=(double)*i;else{auto*f=std::get_if<double>(&args[2]);if(f)z=*f;}}
+        return Value(glm::translate(glm::mat4(1.0f), glm::vec3((float)x,(float)y,(float)z)));
+    };
+    m["mat4.rotate"] = [](const std::vector<Value>& args) -> Value {
+        double angle=0,x=0,y=0,z=0;
+        if(args.size()>=1){auto*i=std::get_if<int64_t>(&args[0]);if(i)angle=(double)*i;else{auto*f=std::get_if<double>(&args[0]);if(f)angle=*f;}}
+        if(args.size()>=2){auto*i=std::get_if<int64_t>(&args[1]);if(i)x=(double)*i;else{auto*f=std::get_if<double>(&args[1]);if(f)x=*f;}}
+        if(args.size()>=3){auto*i=std::get_if<int64_t>(&args[2]);if(i)y=(double)*i;else{auto*f=std::get_if<double>(&args[2]);if(f)y=*f;}}
+        if(args.size()>=4){auto*i=std::get_if<int64_t>(&args[3]);if(i)z=(double)*i;else{auto*f=std::get_if<double>(&args[3]);if(f)z=*f;}}
+        return Value(glm::rotate(glm::mat4(1.0f), glm::radians((float)angle), glm::vec3((float)x,(float)y,(float)z)));
+    };
+    m["mat4.scale"] = [](const std::vector<Value>& args) -> Value {
+        double x=0,y=0,z=0;
+        if(args.size()>=1){auto*i=std::get_if<int64_t>(&args[0]);if(i)x=(double)*i;else{auto*f=std::get_if<double>(&args[0]);if(f)x=*f;}}
+        if(args.size()>=2){auto*i=std::get_if<int64_t>(&args[1]);if(i)y=(double)*i;else{auto*f=std::get_if<double>(&args[1]);if(f)y=*f;}}
+        if(args.size()>=3){auto*i=std::get_if<int64_t>(&args[2]);if(i)z=(double)*i;else{auto*f=std::get_if<double>(&args[2]);if(f)z=*f;}}
+        return Value(glm::scale(glm::mat4(1.0f), glm::vec3((float)x,(float)y,(float)z)));
+    };
+    m["mat4.perspective"] = [](const std::vector<Value>& args) -> Value {
+        double fov=45,aspect=1,near=0.1,far=100;
+        if(args.size()>=1){auto*i=std::get_if<int64_t>(&args[0]);if(i)fov=(double)*i;else{auto*f=std::get_if<double>(&args[0]);if(f)fov=*f;}}
+        if(args.size()>=2){auto*i=std::get_if<int64_t>(&args[1]);if(i)aspect=(double)*i;else{auto*f=std::get_if<double>(&args[1]);if(f)aspect=*f;}}
+        if(args.size()>=3){auto*i=std::get_if<int64_t>(&args[2]);if(i)near=(double)*i;else{auto*f=std::get_if<double>(&args[2]);if(f)near=*f;}}
+        if(args.size()>=4){auto*i=std::get_if<int64_t>(&args[3]);if(i)far=(double)*i;else{auto*f=std::get_if<double>(&args[3]);if(f)far=*f;}}
+        return Value(glm::perspective(glm::radians((float)fov), (float)aspect, (float)near, (float)far));
+    };
+    m["mat4.lookat"] = [](const std::vector<Value>& args) -> Value {
+        double ex=0,ey=0,ez=0,tx=0,ty=0,tz=0,ux=0,uy=0,uz=1;
+        if(args.size()>=1){auto*i=std::get_if<int64_t>(&args[0]);if(i)ex=(double)*i;else{auto*f=std::get_if<double>(&args[0]);if(f)ex=*f;}}
+        if(args.size()>=2){auto*i=std::get_if<int64_t>(&args[1]);if(i)ey=(double)*i;else{auto*f=std::get_if<double>(&args[1]);if(f)ey=*f;}}
+        if(args.size()>=3){auto*i=std::get_if<int64_t>(&args[2]);if(i)ez=(double)*i;else{auto*f=std::get_if<double>(&args[2]);if(f)ez=*f;}}
+        if(args.size()>=4){auto*i=std::get_if<int64_t>(&args[3]);if(i)tx=(double)*i;else{auto*f=std::get_if<double>(&args[3]);if(f)tx=*f;}}
+        if(args.size()>=5){auto*i=std::get_if<int64_t>(&args[4]);if(i)ty=(double)*i;else{auto*f=std::get_if<double>(&args[4]);if(f)ty=*f;}}
+        if(args.size()>=6){auto*i=std::get_if<int64_t>(&args[5]);if(i)tz=(double)*i;else{auto*f=std::get_if<double>(&args[5]);if(f)tz=*f;}}
+        if(args.size()>=7){auto*i=std::get_if<int64_t>(&args[6]);if(i)ux=(double)*i;else{auto*f=std::get_if<double>(&args[6]);if(f)ux=*f;}}
+        if(args.size()>=8){auto*i=std::get_if<int64_t>(&args[7]);if(i)uy=(double)*i;else{auto*f=std::get_if<double>(&args[7]);if(f)uy=*f;}}
+        if(args.size()>=9){auto*i=std::get_if<int64_t>(&args[8]);if(i)uz=(double)*i;else{auto*f=std::get_if<double>(&args[8]);if(f)uz=*f;}}
+        return Value(glm::lookAt(glm::vec3((float)ex,(float)ey,(float)ez), glm::vec3((float)tx,(float)ty,(float)tz), glm::vec3((float)ux,(float)uy,(float)uz)));
+    };
+    m["quat.euler"] = [](const std::vector<Value>& args) -> Value {
+        double pitch=0,yaw=0,roll=0;
+        if(args.size()>=1){auto*i=std::get_if<int64_t>(&args[0]);if(i)pitch=(double)*i;else{auto*f=std::get_if<double>(&args[0]);if(f)pitch=*f;}}
+        if(args.size()>=2){auto*i=std::get_if<int64_t>(&args[1]);if(i)yaw=(double)*i;else{auto*f=std::get_if<double>(&args[1]);if(f)yaw=*f;}}
+        if(args.size()>=3){auto*i=std::get_if<int64_t>(&args[2]);if(i)roll=(double)*i;else{auto*f=std::get_if<double>(&args[2]);if(f)roll=*f;}}
+        glm::quat q = glm::quat(glm::vec3((float)pitch,(float)yaw,(float)roll));
+        return Value(q);
     };
 }
 

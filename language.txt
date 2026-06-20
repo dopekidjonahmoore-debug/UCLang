@@ -1,0 +1,885 @@
+┌──────────────────────────────────────────────────────────┐
+│                    UCLang LANGUAGE REFERENCE            │
+│          A Unity-inspired scripting language with       │
+│         SDL2 + OpenGL 3.3 game engine built-in         │
+└──────────────────────────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. OVERVIEW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+UCLang is a case-insensitive, dynamically-typed scripting language
+with a built-in game engine powered by SDL2 and OpenGL 3.3.
+
+Key features:
+  • Dynamic typing (int, float, string, bool, list)
+  • Functions as first-class named blocks
+  • `==` is ASSIGNMENT (capture), `=` is EQUALITY comparison
+  • All statements end with `.` (period)
+  • Namespace access via `.` (e.g. `Window.open`, `Math.sqrt`)
+  • Built-in GameLoop for game development
+  • ECS (Entity-Component System) as native C++
+  • 2D sprite rendering, 3D mesh rendering, UI system, physics
+  • HTML template literals via `Html(...).`
+  • Case-insensitive keywords and identifiers
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. TOKENS & KEYWORDS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+All tokens (case-insensitive):
+
+  KEYWORDS:
+    def        - Define a function
+    run        - Call a function (namespace form: run.funcname)
+    If         - Conditional (note capital I)
+    then       - Then-block for If/While
+    else       - Else-block for If
+    response   - Return value from function
+    while      - While loop
+    break      - Break from loop
+    next       - Continue to next loop iteration
+    true       - Boolean true literal
+    false      - Boolean false literal
+
+  TYPES (as keywords):
+    int        - Type name Int
+    float      - Type name Float
+    string     - Type name String
+    bool       - Type name Bool
+
+  BUILTINS (as keywords):
+    print      - Print to output
+    input      - Read input from user
+    html       - HTML template literal
+    and        - Boolean AND operator
+    or         - Boolean OR operator
+
+  OPERATORS:
+    ==         - Assignment (capture into variable)
+    =          - Equality comparison
+    => or >=   - Greater-than-or-equal
+    <=         - Less-than-or-equal
+    >          - Greater-than
+    <          - Less-than
+    !=         - Not-equal
+    +          - Addition / string concatenation
+    -          - Subtraction / negation
+    *          - Multiplication
+    /          - Division
+    .          - Statement terminator OR namespace access
+    ,          - Comma separator
+
+  BRACKETS:
+    ( )        - Parentheses (grouping, function calls, blocks)
+    [ ]        - Square brackets (list literals, indexing)
+
+  COMMENTS:
+    ##         - Line comment (everything after ## to end of line)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. DATA TYPES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+UCLang is dynamically typed. Types are automatically inferred:
+
+  ┌──────────┬────────────────────┬──────────────────────┐
+  │ Type     │ Examples           │ Notes                │
+  ├──────────┼────────────────────┼──────────────────────┤
+  │ int      │ 42  0  -7          │ Signed 64-bit        │
+  │ float    │ 3.14  -0.5  1.0    │ 64-bit double        │
+  │ string   │ "hello"  ""        │ UTF-8? (char string) │
+  │ bool     │ true  false        │                      │
+  │ list     │ [1,2,3]  []        │ Dynamic array        │
+  │ null     │ (default)          │ std::monostate       │
+  └──────────┴────────────────────┴──────────────────────┘
+
+NOTE: A period followed by a non-digit (`. ` or `.\n`) creates an
+int64 0, NOT a float. Writing `0.` with nothing after creates int64.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. VARIABLES & ASSIGNMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+IMPORTANT QUIRK: `==` is ASSIGNMENT, `=` is EQUALITY COMPARISON.
+This is the OPPOSITE of most languages.
+
+  Syntax:  variable_name == expression .
+
+Examples:
+  x == 42.                     # assigns 42 to x
+  name == "Alice".             # assigns string
+  flag == true.                # assigns boolean
+  pos == [10, 20, 30].         # assigns list
+  x, y == list_val.            # multi-assign (destructure list)
+
+Variables are dynamically typed and can be reassigned to any type:
+  x == 42.
+  x == "hello".                # now x is a string
+
+Single-line variable declaration + assignment. All variables
+are global unless inside a function (where they're local).
+
+Multi-assignment:
+  a, b, c == [1, 2, 3].       # a=1, b=2, c=3
+
+Type check:
+  x = Int                     # returns true if x is int
+  y = Float                   # returns true if y is float
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5. EXPRESSIONS & OPERATORS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Precedence (lowest to highest):
+
+  1. or              Boolean OR
+  2. and             Boolean AND
+  3. =  !=  >=  <=  >  <     Equality & comparison
+  4. +  -            Addition, subtraction, string concat
+  5. *  /            Multiplication, division
+
+Unary negation:  -expr  (desugared as 0 - expr)
+
+Grouping:  ( expr )
+
+All operators work on int, float, bool, string as appropriate.
+Mixing types in arithmetic throws a runtime error.
+String concatenation works ONLY with string + string.
+
+Truthiness (for If/While conditions):
+  • false is false
+  • 0 and 0.0 are false
+  • "" (empty string) is false
+  • Everything else is true
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+6. CONTROL FLOW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+─── If/Then/Else ────────────────────────────────────────────
+  If(condition then(
+    body statements.
+  ). ).
+  
+  If(condition then(
+    body statements.
+  ). else(
+    else body statements.
+  ). ).
+
+─── While Loop ──────────────────────────────────────────────
+  While(condition then(
+    body statements.
+  ). ).
+
+─── Break / Next ────────────────────────────────────────────
+  break(.).       # breaks out of while loop
+  next(.).        # continues to next iteration
+
+─── Print ───────────────────────────────────────────────────
+  Print(expr).              # prints to stdout
+  Print("hello", 42, x).    # multiple args concatenated
+
+─── Input ───────────────────────────────────────────────────
+  input var.                # reads line into var (string)
+  input "prompt: " var.     # with prompt text
+
+─── Html (Template Literal) ─────────────────────────────────
+  Html(
+    <div class="container">
+      <h1>Title</h1>
+    </div>
+  ).                        # raw HTML string (for web use)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+7. FUNCTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+─── Definition ──────────────────────────────────────────────
+  def funcName(param1, param2.
+    body statements.
+  ).
+
+  Example:
+  def add(a, b.
+    response(a + b).
+  ).
+
+─── Calling ─────────────────────────────────────────────────
+  funcName(args.).             # direct call
+  run.funcName(args.).         # explicit run prefix
+  run.call_func("funcName", args.).  # dynamic call by name
+
+─── Return Values ───────────────────────────────────────────
+  response(expr).              # return single value
+  response(.).                 # return nothing (null)
+  response(a, b.).             # return multiple values as list
+
+─── Namespace Calls ─────────────────────────────────────────
+  Namespace.funcName(args.).
+
+  Examples:
+  Window.open("My Game", 800, 600).
+  Math.sqrt(16.0).
+  Draw.rect(10, 20, 100, 50, "#ff0000").
+  Input.key_down("space").
+
+─── File Loading ────────────────────────────────────────────
+  run_file("stdlib/engine.uc").   # load and execute another file
+                                   # Registers all its functions
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+8. GAMELOOP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The built-in game loop runs at ~60 FPS with automatic SDL event
+polling, delta time calculation, and frame limiting.
+
+  GameLoop(
+    update(.
+      # called once per frame before draw
+      dt == time_delta().
+      physics2d_update(dt).
+    ).
+    draw(.
+      # called once per frame after update
+      Draw3D.begin().
+      Draw3D.mesh("cube", "default", 0,0,0, 0,0,0, 1,1,1).
+      Overlay.begin().
+      Overlay.text(10, 10, "Hello", "#ffffff", 16).
+    ).
+  ).
+
+The GameLoop handles:
+  • SDL event polling (quit, resize, keyboard, mouse)
+  • Delta time calculation (capped at 0.1s)
+  • FPS counter
+  • Frame rate limiting (60 FPS)
+  • Swap buffers (SDL_RenderPresent or SDL_GL_SwapWindow)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+9. LISTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Lists are dynamic arrays. All list operations return NEW lists
+(immutable/copy-on-write semantics).
+
+─── Creation ────────────────────────────────────────────────
+  empty == [].
+  nums == [1, 2, 3, 4, 5].
+  mixed == [1, "hello", true, [3.14]].
+
+─── Indexing ────────────────────────────────────────────────
+  val == list_get(my_list, index).     # 0-based, throws on OOB
+  val == my_list[0].                   # bracket notation
+
+─── List Built-in Functions ────────────────────────────────
+  list_push(list, val...)          # append value(s), returns new list
+  list_pop(list)                   # returns LAST element
+  list_len(list)                   # returns int64 length
+  list_get(list, index)            # get element at index
+  list_set(list, index, val)       # replace at index, returns new list
+  list_insert(list, index, val)    # insert at index, returns new list
+  list_remove(list, index)         # remove at index, returns new list
+  list_contains(list, val)         # returns bool
+  list_index(list, val)            # returns index or -1
+
+Note: `list_len(arg)` requires arg to be a list. Use `str_len(s)`
+      for strings.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+10. STRINGS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+─── String Functions ────────────────────────────────────────
+  str_len(s)               # returns int64 length
+  str_get(s, i)            # returns 1-char string at index, or ""
+  str_slice(s, start, len) # returns substring
+  int_to_str(n)            # converts int/float/bool to string
+  str_to_int(s)            # parses string as int, returns 0 on fail
+
+─── Concatenation ──────────────────────────────────────────
+  "hello" + " " + "world".   # → "hello world"
+  
+  WARNING: string + number throws "Type mismatch" error.
+  Use: "FPS: " + int_to_str(fps).
+
+─── Color Strings ───────────────────────────────────────────
+  Hex color format: "#rrggbb" or "#rrggbbaa"
+  Used by Draw, Overlay, and UI functions.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+11. NATIVE BUILT-IN FUNCTIONS (Complete Reference)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+─── Core ────────────────────────────────────────────────────
+  file_read(path)              → string          Read file contents
+  file_write(path, content)    → null            Write to file
+  call_func(name, args...)     → any             Dynamic function call
+  run_file(path)               → null            Load & execute .uc file
+  print(args...)               → first arg       Print to output
+  input(prompt?)               → string          Read user input
+
+─── Window (namespace: window.* or Window.*) ───────────────
+  window.open(title, w, h)                  → null     Create SDL2 window
+  window.open_3d(title, w, h)               → null     Create OpenGL 3.3 window
+  window.close()                            → null     Close window + quit SDL
+  window.set_size(w, h)                     → null     Resize window
+  window.set_fullscreen(0|1)                → null     Toggle fullscreen
+
+─── Draw 2D (namespace: draw.* or Draw.*) ───────────────────
+  draw.clear(hexcolor?)                     → null     Clear screen
+  draw.rect(x, y, w, h, hexcolor)           → null     Filled rectangle
+  draw.rect_outline(x, y, w, h, hexcolor)   → null     Outlined rectangle
+  draw.line(x1, y1, x2, y2, hexcolor)       → null     Line
+  draw.circle(x, y, r, hexcolor)            → null     Filled circle
+  draw.polygon([x1,y1,x2,y2,...], closed, hexcolor) → null  Polygon
+  draw.arc(x, y, radius, startAngle, endAngle, hexcolor) → null  Arc
+  draw.rounded_rect(x, y, w, h, r, hexcolor) → null    Rounded rect
+  draw.image(path, x, y)                     → null     Draw image
+  draw.image_ex(path, x, y, w, h, angle)     → null     Rotated/scaled image
+  draw.image_region(path, x, y, sx, sy, sw, sh) → null  Spritesheet region
+  draw.set_alpha(path, alpha)               → null     Set texture alpha
+  draw.present()                             → null     Present renderer
+  draw.text(text, x, y, hexcolor, size?)     → null     Render TTF text
+
+─── Input (namespace: input.* or Input.*) ───────────────────
+  input.key(name)                           → bool     Key currently held
+  input.key_down(name)                      → bool     Alias for key
+  input.key_just(name)                      → bool     Key just pressed
+  input.key_just_pressed(name)              → bool     Alias for key_just
+  input.key_just_released(name)             → bool     Key just released
+  input.mouse_x()                           → int      Mouse X position
+  input.mouse_y()                           → int      Mouse Y position
+  input.mouse_dx()                          → int      Mouse delta X
+  input.mouse_dy()                          → int      Mouse delta Y
+  input.mouse_down(button)                  → bool     Button held
+  input.mouse_just_pressed(button)          → bool     Button just pressed
+  input.mouse_just_released(button)         → bool     Button just released
+  input.mouse_lock(locked?)                 → null     Lock/unlock mouse
+
+  Key names: "a"-"z", "0"-"9", "space", "escape"/"esc", "enter"/"return",
+             "up", "down", "left", "right", "shift", "ctrl", "alt", "tab"
+  Buttons: 1 (left), 2 (middle), 3 (right)
+
+─── Camera 2D (namespace: camera.* or Camera.*) ────────────
+  camera.set(x, y)                          → null     Set camera position
+  camera.move(dx, dy)                       → null     Move camera by delta
+  camera.zoom(scale)                        → null     Set zoom factor
+  camera.reset()                            → null     Reset camera
+  camera.screen_to_world(sx, sy)            → [x,y]    Convert coords
+
+─── Time (namespace: time.* or Time.*) ──────────────────────
+  time.delta()                              → float    Frame delta (seconds)
+  time.elapsed()                            → float    Total elapsed time
+  time.fps()                                → float    Measured FPS
+
+─── Sound (namespace: sound.* or Sound.*) ───────────────────
+  sound.load(path)                          → null     Load WAV file
+  sound.play(path)                          → null     Play sound once
+  sound.play_loop(path)                     → null     Play sound looping
+  sound.stop(path?)                         → null     Stop sound
+  sound.volume(path, vol)                   → null     Set volume (0.0-1.0)
+
+─── Music (namespace: music.* or Music.*) ───────────────────
+  music.load(path)                          → null     Load music file
+  music.play()                              → null     Play music looping
+  music.stop()                              → null     Stop music
+  music.volume(vol)                         → null     Set volume (0.0-1.0)
+  music.pause()                             → null     Pause music
+  music.resume()                            → null     Resume music
+
+─── Tilemap (namespace: tilemap.* or Tilemap.*) ────────────
+  tilemap.load(name, csvPath)               → null     Load CSV tile grid
+  tilemap.draw(name, tilesetPath, tileW, tileH) → null  Draw tilemap
+  tilemap.get(name, col, row)               → int      Get tile ID
+  tilemap.set(name, col, row, id)           → null     Set tile ID
+  tilemap.width(name)                       → int      Grid columns
+  tilemap.height(name)                      → int      Grid rows
+
+─── Math (namespace: math.* or Math.*) ──────────────────────
+  math.sin(x)                               → float    Sine (radians)
+  math.cos(x)                               → float    Cosine
+  math.tan(x)                               → float    Tangent
+  math.asin(x)                              → float    Arc sine
+  math.acos(x)                              → float    Arc cosine
+  math.atan2(y, x)                          → float    Arc tangent
+  math.abs(x)                               → int/float Absolute value
+  math.floor(x)                             → int      Floor
+  math.ceil(x)                              → int      Ceil
+  math.round(x)                             → int      Round
+  math.sqrt(x)                              → float    Square root
+  math.pow(base, exp)                       → float    Power
+  math.clamp(v, min, max)                   → float    Clamp
+  math.lerp(a, b, t)                        → float    Linear interpolation
+  math.random()                             → float    Random [0, 1)
+  math.random(min, max)                     → float    Random [min, max)
+  math.random_int()                         → int      Random int
+  math.random_int(min, max)                 → int      Random int [min, max]
+  math.pi()                                 → float    π (3.141592653589793)
+  math.deg(rad)                             → float    Rad to deg
+  math.rad(deg)                             → float    Deg to rad
+  math.distance(x1, y1, x2, y2)             → float    Euclidean distance
+  math.normalize(x, y)                      → [nx,ny]  Normalize vector
+  math.dot(x1, y1, x2, y2)                  → float    Dot product
+
+─── Collision 2D (namespace: rect.* and circle.*) ──────────
+  rect.overlap(x1,y1,w1,h1, x2,y2,w2,h2)   → bool     AABB overlap
+  rect.contains(rx,ry,rw,rh, px,py)         → bool     Point in rect
+  circle.overlap(x1,y1,r1, x2,y2,r2)        → bool     Circle overlap
+  circle.contains(cx,cy,cr, px,py)           → bool     Point in circle
+
+─── Physics 3D (namespace: physics.* or Physics.*) ─────────
+  physics.set_gravity(x, y, z)              → null     Set gravity vector
+  physics.add_body(name, x, y, z, mass)     → null     Add physics body
+  physics.add_box_collider(name, w, h, d)   → null     Set box collider
+  physics.add_sphere_collider(name, radius) → null     Set sphere collider
+  physics.set_velocity(name, vx, vy, vz)    → null     Set velocity
+  physics.get_pos(name)                     → [x,y,z]  Get position
+  physics.get_velocity(name)                → [x,y,z]  Get velocity
+  physics.apply_force(name, fx, fy, fz)     → null     Apply force
+  physics.step(dt?)                         → null     Step simulation
+
+─── ECS / Entity ────────────────────────────────────────────
+  entity_create()                           → int      Create entity, returns ID
+  entity_destroy(id)                        → null     Destroy entity
+  entity_exists(id)                         → bool     Check existence
+  entity_set(id, tag, values...)            → null     Set component data
+  entity_get(id, tag)                       → list     Get component data
+  entity_has(id, tag)                       → bool     Check component
+  entity_all()                              → list     List of all entity IDs
+  entity_count()                            → int      Count of entities
+  entity_clear()                            → null     Clear all entities
+
+─── OpenGL / 3D Mesh (namespace: mesh.* or Mesh.*) ─────────
+  mesh.load(name, objPath)                  → null     Load OBJ file
+  mesh.load_primitive(name, type)           → null     Generate primitive
+    Types: "cube", "sphere", "plane", "cylinder"
+  mesh.unload(name)                         → null     Free mesh data
+
+─── OpenGL / Texture (namespace: texture.* or Texture.*) ───
+  texture.load(name, path)                  → null     Load image to GL
+  texture.bind(name, slot)                  → null     Bind to unit
+
+─── OpenGL / Shader (namespace: shader.* or Shader.*) ──────
+  shader.load(name, vertPath, fragPath)     → null     Load GLSL program
+  shader.set_int(name, x, val)              → null     Set uniform int
+  shader.set_float(name, x, val)            → null     Set uniform float
+  shader.set_vec3(name, x, y, z)            → null     Set uniform vec3
+  shader.set_mat4(name, x, vals)            → null     Set uniform mat4 (list of 16)
+
+─── Camera 3D (namespace: camera3d.* or Camera3D.*) ────────
+  camera3d.set_pos(x, y, z)                 → null     Set camera position
+  camera3d.set_target(x, y, z)              → null     Set look-at target
+  camera3d.set_up(x, y, z)                  → null     Set up vector
+  camera3d.set_fov(fov)                     → null     Set field of view
+  camera3d.set_clip(near, far)              → null     Set clip planes
+  camera3d.set_mode("perspective"|"orthographic") → null Set projection
+
+─── Lighting (namespace: light.* or Light.*) ────────────────
+  light.ambient(r, g, b, intensity)         → null     Ambient light
+  light.directional(dx, dy, dz, r, g, b, intensity) → null  Dir light
+  light.point(...)                          → null     (stub)
+  light.remove(...)                         → null     (stub)
+
+─── Draw 3D (namespace: draw3d.* or Draw3D.*) ──────────────
+  draw3d.begin()                            → null     Clear buffers, enable depth
+  draw3d.end()                              → null     (no-op)
+  draw3d.mesh(name, shader, x,y,z, rx,ry,rz, sx,sy,sz?) → null  Draw mesh
+
+─── Overlay 2D (namespace: overlay.* or Overlay.*) ─────────
+  overlay.font(path, size)                  → null     Load TTF font
+  overlay.begin()                           → null     Prep for 2D overlay on 3D
+  overlay.text(x, y, text, hexcolor, size)  → null     Draw text
+  overlay.rect(x, y, w, h, hexcolor)        → null     Draw filled rect
+  overlay.circle(x, y, radius, hexcolor)    → null     Draw filled circle
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+12. STANDARD LIBRARY (stdlib/*.uc) - Complete API
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The standard engine is loaded via:
+  run_file("stdlib/engine.uc").
+
+This loads 14 modules. Here is every function in each:
+
+─── mathf.uc ─────────────────────────────────────────────────
+  mathf_clamp(val, min, max)                       → float
+  mathf_clamp01(val)                                → float
+  mathf_lerp(a, b, t)                               → float
+  mathf_lerp_unclamped(a, b, t)                     → float
+  mathf_inverse_lerp(a, b, val)                     → float
+  mathf_move_towards(current, target, max_delta)    → float
+  mathf_smooth_step(a, b, t)                        → float
+  mathf_ping_pong(t, length)                        → float
+  mathf_remap(val, from_low, from_high, to_low, to_high) → float
+  mathf_sign(val)                                   → int (-1, 0, or 1)
+  mathf_distance(x1, y1, x2, y2)                    → float
+  mathf_angle(x1, y1, x2, y2)                       → float (degrees)
+  mathf_direction(from_x, from_y, to_x, to_y)       → [dx, dy]
+
+─── transform.uc ─────────────────────────────────────────────
+  transform_set_pos(eid, x, y)                      → null
+  transform_set_z(eid, z)                            → null
+  transform_get_x(eid)                               → float
+  transform_get_y(eid)                               → float
+  transform_get_z(eid)                               → float
+  transform_get_pos(eid)                             → [x, y, z]
+  transform_set_rotation(eid, angle_deg)             → null
+  transform_get_rotation(eid)                        → float
+  transform_set_scale(eid, sx, sy)                   → null
+  transform_get_scale(eid)                           → [sx, sy, sz]
+  transform_translate(eid, dx, dy)                   → null
+  transform_look_at(from_eid, to_x, to_y)            → null
+
+─── gameobject.uc ────────────────────────────────────────────
+  gameobject_create(name, x, y)                      → entity_id
+  gameobject_destroy(eid)                             → null
+  gameobject_find(name)                              → entity_id (or -1)
+  gameobject_find_all(name)                          → [entity_ids]
+  gameobject_set_active(eid, active)                  → null
+  gameobject_is_active(eid)                          → bool
+
+─── time.uc ─────────────────────────────────────────────────
+  time_delta()                                       → float
+  time_unscaled_delta()                              → float
+  time_elapsed()                                     → float
+  time_fps()                                         → float
+  time_set_scale(scale)                              → null
+  time_get_scale()                                   → float
+
+─── input.uc ────────────────────────────────────────────────
+  input_get_key(name)                                → bool
+  input_get_key_down(name)                           → bool (just pressed)
+  input_get_key_up(name)                             → bool (just released)
+  input_get_mouse_button(button)                     → bool
+  input_get_mouse_button_down(button)                 → bool
+  input_get_mouse_button_up(button)                   → bool
+  input_get_axis("horizontal"|"vertical")            → float (-1 to 1)
+  input_get_mouse_x()                                → int
+  input_get_mouse_y()                                → int
+  input_get_mouse_delta()                            → [dx, dy]
+  input_lock_mouse(locked)                           → null
+
+─── physics2d.uc ─────────────────────────────────────────────
+  physics2d_set_gravity(gy)                          → null
+  physics2d_get_gravity()                            → float
+  physics2d_add_velocity(eid, vx, vy)                → null
+  physics2d_set_ground(eid, ground_y)                → null
+  physics2d_update(dt)                               → null (main physics tick)
+  physics2d_is_grounded(eid)                         → bool
+  physics2d_circle_collision(x1,y1,r1, x2,y2,r2)     → bool
+  physics2d_rect_collision(ax,ay,aw,ah, bx,by,bw,bh) → bool
+
+─── camera_2d.uc ─────────────────────────────────────────────
+  cam2d_set_pos(x, y)                                → null
+  cam2d_get_pos()                                    → [x, y]
+  cam2d_set_zoom(zoom)                               → null
+  cam2d_get_zoom()                                   → float
+  cam2d_follow(eid, offset_x, offset_y)               → null
+  cam2d_stop_follow()                                → null
+  cam2d_shake(magnitude, duration)                   → null
+  cam2d_update(dt)                                   → null
+  cam2d_world_to_screen(wx, wy, sw, sh)              → [sx, sy]
+  cam2d_screen_to_world(sx, sy, sw, sh)              → [wx, wy]
+
+─── ui_canvas.uc ─────────────────────────────────────────────
+  ui_canvas_create()                                 → canvas_id
+  ui_canvas_destroy(canvas_id)                       → null
+  ui_canvas_set_active(canvas_id, active)            → null
+  ui_image(canvas_id, x, y, w, h, hexcolor)          → elem_id
+  ui_text(canvas_id, x, y, text, font_size, hexcolor) → elem_id
+  ui_button(canvas_id, x, y, w, h, text, callback_func_name) → elem_id
+  ui_panel(canvas_id, x, y, w, h, hexcolor)          → elem_id
+  ui_slider(canvas_id, x, y, w, h, min, max, default) → elem_id
+  ui_set_text(elem_id, new_text)                     → null
+  ui_set_color(elem_id, new_hexcolor)                → null
+  ui_set_pos(elem_id, x, y)                          → null
+  ui_set_visible(elem_id, visible)                   → null
+  ui_slider_value(elem_id)                           → float
+  ui_update_all()                                    → null (call in update)
+  ui_draw_all()                                      → null (call in draw)
+
+─── graphics.uc ──────────────────────────────────────────────
+  graphics_draw_rect(x, y, w, h, hexcolor)           → null
+  graphics_draw_circle(cx, cy, radius, hexcolor)     → null
+  graphics_draw_text(x, y, text, hexcolor, size)     → null
+  graphics_draw_sprite(eid)                          → null (draws entity's sprite)
+
+─── debug.uc ─────────────────────────────────────────────────
+  debug_log(message)                                 → null
+  debug_log_value(name, val)                         → null
+  debug_draw_circle(cx, cy, radius, hexcolor)        → null
+  debug_draw_rect(x, y, w, h, hexcolor)              → null
+  debug_draw_text(x, y, text)                        → null
+  debug_draw_fps()                                   → null
+  debug_draw_entity_count()                          → null
+  debug_draw_all()                                   → null
+
+─── scene.uc ────────────────────────────────────────────────
+  scene_register(name, init_func, update_func, draw_func) → null
+  scene_go(name)                                     → null
+  scene_update()                                     → null
+  scene_draw()                                       → null
+
+─── particles.uc ─────────────────────────────────────────────
+  particle_create(x, y, vx, vy, lifetime, hexcolor)  → particle
+  particle_update(p, dt)                             → particle
+  particle_draw(p)                                   → null
+  particle_alive(p)                                  → bool
+  particle_burst(x, y, count, speed, lifetime, hexcolor) → [particles]
+  particle_system_new(max_particles)                 → psystem
+  particle_system_update(ps, dt)                     → psystem
+  particle_system_draw(ps)                           → null
+  particle_system_emit(ps, count, x, y, speed, lifetime, hexcolor) → psystem
+
+─── animation.uc ──────────────────────────────────────────────
+  tween_create(start, end, duration, ease_type)      → tween
+  tween_update(t, dt)                                 → tween
+  tween_value(t)                                      → float (current value)
+  tween_done(t)                                       → bool
+  tween_reset(t)                                      → tween
+  ease_apply(type, t)                                 → float
+  ease_linear(t)                                      → float
+  ease_quad_in(t)                                     → float
+  ease_quad_out(t)                                    → float
+  ease_cubic_in(t)                                    → float
+  ease_cubic_out(t)                                   → float
+  ease_sine_in(t)                                     → float
+  ease_sine_out(t)                                    → float
+  ease_elastic_out(t)                                 → float
+  ease_bounce_out(t)                                  → float
+
+  Ease types (strings): "linear", "quad_in", "quad_out",
+    "cubic_in", "cubic_out", "sine_in", "sine_out",
+    "elastic_out", "bounce_out"
+
+─── pathfind.uc ──────────────────────────────────────────────
+  pathfind_grid(w, h)                                → grid (nested list)
+  pathfind_set(grid, x, y, val)                      → grid
+  pathfind_get(grid, x, y)                           → int
+  pathfind_find(grid, sx, sy, ex, ey)                → path [[x,y],...]
+    Uses BFS on 4-directional grid where 0=walkable, 1=blocked
+
+─── ecs.uc (lower-level entity wrapper) ──────────────────────
+  entity_new()                                       → id
+  entity_add_component(eid, tag)                     → null
+  entity_get_pos(eid)                                → [x, y, z]
+  entity_set_pos(eid, x, y, z)                      → null
+  entity_get_vel(eid)                                → [x, y, z]
+  entity_set_vel(eid, x, y, z)                      → null
+  entity_query(tag)                                  → [entity_ids] (all with tag)
+
+─── ui.uc (lower-level UI widget wrappers) ───────────────────
+  button_create(x, y, w, h, label)                   → button
+  button_update(b)                                   → [b, clicked?]
+  button_draw(b)                                     → null
+  label_create(x, y, text, hexcolor)                 → label
+  label_draw(l)                                      → null
+  panel_create(x, y, w, h, hexcolor)                 → panel
+  panel_draw(p)                                      → null
+  textbox_create(x, y, w, h)                        → textbox
+  textbox_update(tb)                                 → textbox
+  textbox_draw(tb)                                   → null
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+13. COMPLETE WORKING EXAMPLE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+─── Minimal 2D Game ──────────────────────────────────────────
+  run_file("stdlib/engine.uc").
+
+  Window.open("My Game", 800, 600).
+
+  physics2d_set_gravity(-12.0).
+  cam2d_set_zoom(1.0).
+
+  player == gameobject_create("Player", 0.0, 3.0).
+  entity_set(player, "velocity", 0.0, 0.0, 0.0).
+  entity_set(player, "gravity", -12.0).
+  entity_set(player, "ground_y", -3.0).
+  entity_set(player, "sprite", 32.0, 32.0, "#44ddff").
+
+  def game_init(.
+    Overlay.font("assets/font.ttf", 24).
+  ).
+
+  def game_update(.
+    dt == time_delta().
+    physics2d_update(dt).
+
+    h == input_get_axis("horizontal").
+    If(h != 0 then(
+      transform_translate(player, h * 5.0 * dt, 0.0).
+    ). ).
+
+    If(input_get_key_down("space") and physics2d_is_grounded(player) then(
+      vel == entity_get(player, "velocity").
+      vel == list_set(vel, 1, 7.0).
+      entity_set(player, "velocity", list_get(vel, 0), list_get(vel, 1), list_get(vel, 2)).
+    ). ).
+
+    cam2d_follow(player, 0.0, 0.0).
+    cam2d_update(dt).
+
+    px == transform_get_x(player).
+    If(px < -10.0 then(transform_set_pos(player, -10.0, px). ). ).
+    If(px > 10.0 then(transform_set_pos(player, 10.0, px). ). ).
+  ).
+
+  def game_draw(.
+    Overlay.begin().
+    graphics_draw_sprite(player).
+    debug_draw_all().
+  ).
+
+  scene_register("game", "game_init", "game_update", "game_draw").
+  scene_go("game").
+
+  GameLoop(
+    update(.
+      scene_update().
+    ).
+    draw(.
+      scene_draw().
+    ).
+  ).
+
+─── Minimal 3D Game ──────────────────────────────────────────
+  run_file("stdlib/engine.uc").
+
+  Window.open_3d("3D Demo", 1024, 768).
+  Camera3D.set_pos(0.0, 5.0, 8.0).
+  Camera3D.set_target(0.0, 0.0, 0.0).
+
+  light.directional(0.5, -1.0, 0.3, 1.0, 1.0, 1.0, 1.0).
+  light.ambient(0.3, 0.3, 0.4, 0.5).
+
+  Mesh.load_primitive("player", "cube").
+  Mesh.load_primitive("floor", "plane").
+
+  def update(.
+    dt == time_delta().
+  ).
+
+  def draw(.
+    Draw3D.begin().
+    Draw3D.mesh("floor", "default", 0, -0.5, 0, 0,0,0, 10,1,10).
+    Draw3D.mesh("player", "default", 0, 0.5, 0, 0, time_elapsed()*90, 0, 0.5,0.5,0.5).
+  ).
+
+  scene_register("demo", "", "update", "draw").
+  scene_go("demo").
+
+  GameLoop(
+    update(. scene_update(). ).
+    draw(. scene_draw(). ).
+  ).
+
+─── Simple UI Canvas Demo ────────────────────────────────────
+  run_file("stdlib/engine.uc").
+
+  Window.open("UI Demo", 800, 600).
+
+  canvas == ui_canvas_create().
+  title == ui_text(canvas, 300, 50, "Hello UCLang", 32, "#ffdd44").
+  btn == ui_button(canvas, 300, 200, 200, 50, "Click Me", "on_click").
+
+  def on_click(.
+    ui_set_text(title, "Button Clicked!").
+  ).
+
+  def update(.
+    ui_update_all().
+  ).
+
+  def draw(.
+    Draw.clear().
+    ui_draw_all().
+    Draw.present().
+  ).
+
+  scene_register("ui", "", "update", "draw").
+  scene_go("ui").
+
+  GameLoop(
+    update(. scene_update(). ).
+    draw(. scene_draw(). ).
+  ).
+
+─── Particle System Demo ─────────────────────────────────────
+  run_file("stdlib/engine.uc").
+
+  Window.open("Particles", 800, 600).
+
+  ps == particle_system_new(100).
+
+  def update(.
+    dt == time_delta().
+    ps == particle_system_update(ps, dt).
+    ps == particle_system_emit(ps, 1, 400, 300, 50, 2.0, "#ffaa00").
+  ).
+
+  def draw(.
+    Draw.clear("#111122").
+    particle_system_draw(ps).
+    Draw.present().
+  ).
+
+  scene_register("particles", "", "update", "draw").
+  scene_go("particles").
+
+  GameLoop(
+    update(. scene_update(). ).
+    draw(. scene_draw(). ).
+  ).
+
+─── Pathfinding Demo ─────────────────────────────────────────
+  run_file("stdlib/engine.uc").
+
+  Window.open("Pathfinding", 800, 600).
+
+  grid == pathfind_grid(10, 10).
+  grid == pathfind_set(grid, 3, 3, 1).
+  grid == pathfind_set(grid, 4, 3, 1).
+  grid == pathfind_set(grid, 5, 3, 1).
+  path == pathfind_find(grid, 0, 0, 9, 9).
+
+  Print("Path length: " + int_to_str(list_len(path))).
+
+  def draw(.
+    Draw.clear().
+    ## draw grid...
+    Draw.present().
+  ).
+
+  GameLoop(
+    update(. .).
+    draw(. draw(). ).
+  ).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+14. IMPORTANT CAVEATS & QUIRKS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  • `==` is ASSIGNMENT, `=` is EQUALITY (opposite of C/JS/Python)
+  • All statements MUST end with `.` (period)
+  • Comments use `##` (double hash), NOT `//`
+  • string + number throws "Type mismatch" — use int_to_str()
+  • list_len() requires a list, not a string — use str_len() for strings
+  • `0.` with nothing after creates int64 (not float)
+  • `If` uses capital I, `then` is lowercase
+  • Functions are case-insensitive (MyFunc = myfunc = MYFUNC)
+  • Variables can be used before assignment (returns null/monostate)
+  • Lists are copy-on-write (every mutation returns a new list)
+  • entity_all() returns a NEW list each call
+  • The GameLoop caps delta time at 0.1 seconds
+  • Physics2D uses Euler integration (fixed timestep recommended)
+  • Color strings: "#rrggbb" or "#rrggbbaa" format
+  • The `input` keyword is reserved — for input functions use
+    the wrappers in input.uc (input_get_key, etc.)
+  • Music requires loading a file before play/stop/etc.
+  • Camera2D is separate from native camera.set() — use cam2d_set_pos()
+    for the stdlib camera, camera.set() for the native one
+  • Window.set_size and Window.set_fullscreen work for both 2D and 3D

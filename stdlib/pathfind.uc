@@ -1,4 +1,4 @@
-pathfind_grid(w, h.
+def pathfind_grid(w, h.
   grid == [].
   y == 0.
   While(y < h then(
@@ -14,17 +14,17 @@ pathfind_grid(w, h.
   response(grid).
 ).
 
-pathfind_set(grid, x, y, val.
+def pathfind_set(grid, x, y, val.
   row == list_get(grid, y).
   grid == list_set(grid, y, list_set(row, x, val)).
   response(grid).
 ).
 
-pathfind_get(grid, x, y.
+def pathfind_get(grid, x, y.
   response(list_get(list_get(grid, y), x)).
 ).
 
-pathfind_find(grid, sx, sy, ex, ey.
+def pathfind_find(grid, sx, sy, ex, ey.
   w == list_len(list_get(grid, 0)).
   h == list_len(grid).
   visited == [].
@@ -39,8 +39,8 @@ pathfind_find(grid, sx, sy, ex, ey.
     visited == list_push(visited, row).
     y == y + 1.
   ). ).
-  rowV == list_get(visited, sy).
-  visited == list_set(visited, sy, list_set(rowV, sx, 1)).
+  row_v == list_get(visited, sy).
+  visited == list_set(visited, sy, list_set(row_v, sx, 1)).
   parents == [[sx, sy, -1]].
   queue == [[sx, sy]].
   head == 0.
@@ -54,8 +54,8 @@ pathfind_find(grid, sx, sy, ex, ey.
         If(list_get(list_get(visited, cy), cx - 1) = 0 then(
           queue == list_push(queue, [cx - 1, cy]).
           parents == list_push(parents, [cx - 1, cy, head]).
-          rowV2 == list_get(visited, cy).
-          visited == list_set(visited, cy, list_set(rowV2, cx - 1, 1)).
+          row_v2 == list_get(visited, cy).
+          visited == list_set(visited, cy, list_set(row_v2, cx - 1, 1)).
           If(cx - 1 = ex and cy = ey then(found == 1. ). ).
         ). ).
       ). ).
@@ -65,8 +65,8 @@ pathfind_find(grid, sx, sy, ex, ey.
         If(list_get(list_get(visited, cy), cx + 1) = 0 then(
           queue == list_push(queue, [cx + 1, cy]).
           parents == list_push(parents, [cx + 1, cy, head]).
-          rowV2 == list_get(visited, cy).
-          visited == list_set(visited, cy, list_set(rowV2, cx + 1, 1)).
+          row_v2 == list_get(visited, cy).
+          visited == list_set(visited, cy, list_set(row_v2, cx + 1, 1)).
           If(cx + 1 = ex and cy = ey then(found == 1. ). ).
         ). ).
       ). ).
@@ -76,8 +76,8 @@ pathfind_find(grid, sx, sy, ex, ey.
         If(list_get(list_get(visited, cy - 1), cx) = 0 then(
           queue == list_push(queue, [cx, cy - 1]).
           parents == list_push(parents, [cx, cy - 1, head]).
-          rowV2 == list_get(visited, cy - 1).
-          visited == list_set(visited, cy - 1, list_set(rowV2, cx, 1)).
+          row_v2 == list_get(visited, cy - 1).
+          visited == list_set(visited, cy - 1, list_set(row_v2, cx, 1)).
           If(cx = ex and cy - 1 = ey then(found == 1. ). ).
         ). ).
       ). ).
@@ -87,8 +87,8 @@ pathfind_find(grid, sx, sy, ex, ey.
         If(list_get(list_get(visited, cy + 1), cx) = 0 then(
           queue == list_push(queue, [cx, cy + 1]).
           parents == list_push(parents, [cx, cy + 1, head]).
-          rowV2 == list_get(visited, cy + 1).
-          visited == list_set(visited, cy + 1, list_set(rowV2, cx, 1)).
+          row_v2 == list_get(visited, cy + 1).
+          visited == list_set(visited, cy + 1, list_set(row_v2, cx, 1)).
           If(cx = ex and cy + 1 = ey then(found == 1. ). ).
         ). ).
       ). ).

@@ -16,8 +16,9 @@
 namespace UCLang {
 
 // ─── Global SDL state ──────────────────────────────────────
-static SDL_Window*   g_window       = nullptr;
+SDL_Window*   g_window       = nullptr;
 extern SDL_Window*   g_glWindow;
+extern int           g_glWidth, g_glHeight;
 static SDL_Renderer* g_renderer     = nullptr;
 static TTF_Font*     g_font         = nullptr;
 static bool          g_sdlQuit      = false;
@@ -168,6 +169,15 @@ void run_sdl_game_loop(const std::function<void()>& updateFn, const std::functio
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) g_sdlQuit = true;
+            if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_RESIZED) {
+                if (is3d) {
+                    g_glWidth = e.window.data1;
+                    g_glHeight = e.window.data2;
+                    typedef void (*VPFn)(int,int,int,int);
+                    VPFn vp = (VPFn)SDL_GL_GetProcAddress("glViewport");
+                    if (vp) vp(0, 0, g_glWidth, g_glHeight);
+                }
+            }
             if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) {
                 if (g_mouseLocked) {
                     SDL_SetRelativeMouseMode(SDL_FALSE);
@@ -220,7 +230,7 @@ void register_sdl_natives(
         if (SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO) < 0)
             throw std::runtime_error(std::string("SDL_Init: ") + SDL_GetError());
         g_window = SDL_CreateWindow(title->c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-            w, h, SDL_WINDOW_SHOWN);
+            w, h, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
         if (!g_window) { SDL_Quit(); throw std::runtime_error(std::string("SDL_CreateWindow: ")+SDL_GetError()); }
         g_renderer = SDL_CreateRenderer(g_window, -1, SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);
         if (!g_renderer) { SDL_DestroyWindow(g_window); g_window=nullptr; SDL_Quit(); throw std::runtime_error(std::string("SDL_CreateRenderer: ")+SDL_GetError()); }
@@ -496,6 +506,8 @@ void register_sdl_natives(
         return Value(g_keyState[sc]!=0);
     };
 
+    m["input.key_down"] = m["input.key"];
+
     m["input.key_just"] = [](const std::vector<Value>& args) -> Value {
         if (args.empty()) throw std::runtime_error("Input.key_just(name): need key name");
         auto* name=std::get_if<std::string>(&args[0]);
@@ -504,6 +516,8 @@ void register_sdl_natives(
         if(sc<0) return Value(false);
         return Value(g_keyJustState[sc]!=0 && !g_prevKeyState[sc]);
     };
+
+    m["input.key_just_pressed"] = m["input.key_just"];
 
     m["input.mouse_x"] = [](const std::vector<Value>&) -> Value {
         return Value((int64_t)g_mouseX);

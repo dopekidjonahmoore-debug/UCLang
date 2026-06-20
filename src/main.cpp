@@ -15,6 +15,7 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <set>
 #include "core.h"
 
 // ─── Theme ───
@@ -67,19 +68,52 @@ static const int GUTTER_W   = 46;
 static const int CHAR_W     = 8;
 static const int CHAR_H     = 17;
 
+// ─── UCLang keywords set ───
+static std::set<std::string> g_keywords = {
+    "if","then","else","response","def","run","while","for","break","next",
+    "class","struct","interface","extends","implements","new","this","super",
+    "public","private","protected","static","override","virtual","abstract",
+    "yield","coro_start","coro_resume","coro_done","import","const","return",
+    "and","or","not","null","true","false","int","float","string","bool",
+    "html","input","print"
+};
+
+static std::set<std::string> g_types = {
+    "int","float","string","bool","void","vec3","quat","mat4"
+};
+
+static std::set<std::string> g_builtins = {
+    "print","input","html","response","run","vec3","quat","mat4",
+    "coro_start","coro_resume","coro_done","yield","import",
+    "list_push","list_pop","list_len","list_set","list_get",
+    "str_slice","int_to_str","str_to_int"
+};
+
 // ─── Text buffer ───
 struct TextBuffer {
     std::vector<std::string> lines = {""};
-    int cx = 0, cy = 0;           // cursor column, line
-    int selX = -1, selY = -1;     // selection anchor (-1 = no selection)
-    int scroll = 0;               // first visible line
-    int targetCol = -1;           // for vertical navigation (-1 = use cx)
+    int cx = 0, cy = 0;
+    int selX = -1, selY = -1;
+    int scroll = 0;
+    int targetCol = -1;
     bool dirty = false;
     std::string filepath;
 
     int lineCount() const { return (int)lines.size(); }
     const std::string& line(int i) const { return lines[i]; }
     std::string& line(int i) { return lines[i]; }
+
+    int calcWordCount() const {
+        int count = 0;
+        for (const auto& l : lines) {
+            bool inWord = false;
+            for (char c : l) {
+                if (c == ' ' || c == '\t') { inWord = false; }
+                else if (!inWord) { count++; inWord = true; }
+            }
+        }
+        return count;
+    }
 };
 
 // ─── Output buffer ───
@@ -100,7 +134,9 @@ struct TokenRun {
 };
 
 // ─── Global state ───
-static TextBuffer   g_buf;
+static std::vector<TextBuffer> g_bufs;
+static int g_activeTab = 0;
+#define g_buf g_bufs[g_activeTab]
 static OutputBuffer g_out;
 static HINSTANCE    g_hInst;
 static HWND         g_hWnd, g_hStatus, g_hOutput;
@@ -110,26 +146,28 @@ static bool         g_showOutput = true;
 static bool         g_cursorVisible = true;
 static UINT_PTR     g_cursorTimer = 1;
 static bool         g_controlDown = false;
-static HMENU        g_menuBar = nullptr;   // menu bar for popups
-static POINT        g_dragStart = {0};     // for window dragging
+static HMENU        g_menuBar = nullptr;
+static POINT        g_dragStart = {0};
 
 // ─── Menu IDs ───
 enum { ID_NEW=100, ID_OPEN, ID_SAVE, ID_SAVEAS, ID_EXIT,
        ID_UNDO, ID_CUT, ID_COPY, ID_PASTE, ID_SELECTALL,
        ID_COPYOUTPUT,
-       ID_RUN, ID_COMPILE, ID_BUILD, ID_ABOUT };
+       ID_RUN, ID_COMPILE, ID_BUILD, ID_ABOUT, ID_NEWTAB, ID_CLOSETAB };
 
 // ─── Suggestion / autocomplete ───
 static std::vector<std::string> g_suggestions;
 static int g_sugSel = 0;
 static bool g_showSug = false;
 static HWND g_hSugWnd = nullptr;
-static WNDPROC g_oldSugProc = nullptr;
 
 static const char* g_sugKeywords[] = {
     "run", "if", "then", "else", "response", "print", "input", "html",
-    "true", "false",
-    "int", "float", "string", "bool"
+    "true", "false", "def", "new", "this", "super",
+    "int", "float", "string", "bool", "vec3", "quat", "mat4",
+    "class", "struct", "interface", "extends", "implements",
+    "public", "private", "protected", "static", "override",
+    "while", "for", "return", "import", "yield", "null"
 };
 
 static void fillRect(HDC dc, int x, int y, int w, int h, COLORREF c);
@@ -139,7 +177,9 @@ static void buildSuggestions(const std::string& prefix) {
     std::string lower = prefix;
     for (char& c : lower) c = (char)std::tolower((unsigned char)c);
     for (auto kw : g_sugKeywords) {
-        if (lower.empty() || std::strstr(kw, lower.c_str()) == kw)
+        std::string kwl;
+        for (const char* p = kw; *p; ++p) kwl += (char)std::tolower((unsigned char)*p);
+        if (lower.empty() || kwl.find(lower) == 0)
             g_suggestions.push_back(kw);
     }
     g_sugSel = 0;
@@ -289,20 +329,40 @@ static std::string showInputDialog(const std::string& prompt) {
     return g_inputResult;
 }
 
-// ─── File I/O ───
-static void loadFile(const char* path) {
-    g_buf.filepath = path;
-    g_buf.lines.clear();
-    std::ifstream f(path);
-    if (f.is_open()) {
-        std::string line;
-        while (std::getline(f, line)) g_buf.lines.push_back(line);
+// ─── Tab management ───
+static int addTab(const std::string& filepath = "") {
+    TextBuffer buf;
+    if (!filepath.empty()) {
+        buf.filepath = filepath;
+        std::ifstream f(filepath);
+        if (f.is_open()) {
+            buf.lines.clear();
+            std::string line;
+            while (std::getline(f, line)) buf.lines.push_back(line);
+        }
     }
-    if (g_buf.lines.empty()) g_buf.lines.push_back("");
-    g_buf.cx = g_buf.cy = g_buf.scroll = 0;
-    g_buf.selX = g_buf.selY = -1;
-    g_buf.targetCol = -1;
-    g_buf.dirty = false;
+    if (buf.lines.empty()) buf.lines.push_back("");
+    g_bufs.push_back(buf);
+    int idx = (int)g_bufs.size() - 1;
+    g_activeTab = idx;
+    return idx;
+}
+
+static void closeTab(int idx) {
+    if (g_bufs.size() <= 1) return;
+    g_bufs.erase(g_bufs.begin() + idx);
+    if (g_activeTab >= (int)g_bufs.size()) g_activeTab = (int)g_bufs.size() - 1;
+}
+
+static void loadFile(const char* path) {
+    // Check if file is already open in a tab
+    for (int i = 0; i < (int)g_bufs.size(); ++i) {
+        if (g_bufs[i].filepath == path) {
+            g_activeTab = i;
+            return;
+        }
+    }
+    addTab(path);
 }
 
 static bool saveFile(const std::string& path) {
@@ -318,49 +378,67 @@ static bool saveFile(const std::string& path) {
 }
 
 static void newFile() {
-    g_buf = TextBuffer();
-    g_buf.lines = {""};
+    addTab();
 }
 
-// ─── Syntax highlighting ───
-static COLORREF tokenColor(int tokenType) {
-    using TT = int; // mapped from TokenType enum
-    switch (tokenType) {
-        case 14: case 15: case 16: case 17: // LIT_STRING, LIT_INT, LIT_FLOAT, LIT_BOOL
-            return g_theme.synStr;
-        case 23: case 24: case 25: case 26: // TYPE_INT..TYPE_BOOL
-            return g_theme.synTy;
-        case 27: case 28: case 29: case 30: case 31: case 32: // KW_DEF..KW_RESPONSE
-            return g_theme.synKw;
-        case 33: case 34: case 35: // BUILTIN_PRINT..BUILTIN_HTML
-            return g_theme.synFn;
-        case 36: case 37: case 38: case 39: case 40: case 41: case 42: // OP_ASSIGN..OP_SLASH
-            return g_theme.synOp;
-        case 43: case 44: case 45: case 46: case 47: case 48: case 49: case 50: // STMT_END..RBRACKET
-            return g_theme.synPu;
-        default: return g_theme.text;
+// ─── Brace matching ───
+static bool isOpenBrace(char c) { return c == '{' || c == '(' || c == '['; }
+static bool isCloseBrace(char c) { return c == '}' || c == ')' || c == ']'; }
+static char matchingBrace(char c) {
+    switch (c) {
+        case '{': return '}'; case '}': return '{';
+        case '(': return ')'; case ')': return '(';
+        case '[': return ']'; case ']': return '[';
+        default: return 0;
     }
 }
 
-static bool isMultiChar(int tt) {
-    return tt >= 11 && tt <= 21; // any token type that spans multiple chars
+// ─── Auto-indent: return indent of previous non-empty line ───
+static std::string getAutoIndent() {
+    for (int y = g_buf.cy - 1; y >= 0; --y) {
+        const std::string& l = g_buf.line(y);
+        if (l.empty()) continue;
+        // Count leading whitespace
+        size_t ws = 0;
+        while (ws < l.size() && (l[ws] == ' ' || l[ws] == '\t')) ws++;
+        std::string indent = l.substr(0, ws);
+        // If previous line ends with { , add another level
+        std::string trimmed = l.substr(ws);
+        if (!trimmed.empty() && trimmed.back() == '{') indent += "    ";
+        return indent;
+    }
+    return "";
+}
+
+// ─── Syntax highlighting ───
+static bool isKeyword(const std::string& word) {
+    std::string lw;
+    for (char c : word) lw += (char)std::tolower((unsigned char)c);
+    return g_keywords.count(lw) > 0;
+}
+static bool isType(const std::string& word) {
+    std::string lw;
+    for (char c : word) lw += (char)std::tolower((unsigned char)c);
+    return g_types.count(lw) > 0;
+}
+static bool isBuiltin(const std::string& word) {
+    std::string lw;
+    for (char c : word) lw += (char)std::tolower((unsigned char)c);
+    return g_builtins.count(lw) > 0;
 }
 
 static std::vector<TokenRun> tokenizeLine(const std::string& line) {
     std::vector<TokenRun> runs;
     if (line.empty()) return runs;
-    // Use C API to tokenize the whole file, but for a single line
-    // we do a lightweight keyword/string/number scan directly
     size_t i = 0;
     int state = 0; // 0=normal, 1=string, 2=comment
-    
+
     auto addRun = [&](int start, int end, COLORREF c) {
         if (start < end) runs.push_back({start, end, c});
     };
 
     while (i < line.size()) {
         if (state == 1) {
-            // Inside string
             size_t end = i;
             while (end < line.size()) {
                 if (line[end] == '"') { end++; break; }
@@ -376,32 +454,33 @@ static std::vector<TokenRun> tokenizeLine(const std::string& line) {
             addRun((int)i, (int)line.size(), g_theme.synCm);
             break;
         }
-        
+
         char c = line[i];
-        
+
         // Comments ##
         if (c == '#' && i + 1 < line.size() && line[i+1] == '#') {
             state = 2;
             continue;
         }
-        
+
         // Strings
         if (c == '"') {
             state = 1;
             i++;
             continue;
         }
-        
+
         // Digits
         if (c >= '0' && c <= '9') {
             size_t end = i;
-            while (end < line.size() && ((line[end] >= '0' && line[end] <= '9') || line[end] == '.'))
+            while (end < line.size() && ((line[end] >= '0' && line[end] <= '9') || line[end] == '.' || line[end] == 'x' || line[end] == 'X' ||
+                   (line[end] >= 'a' && line[end] <= 'f') || (line[end] >= 'A' && line[end] <= 'F')))
                 end++;
             addRun((int)i, (int)end, g_theme.synNum);
             i = end;
             continue;
         }
-        
+
         // Identifiers / keywords
         if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_') {
             size_t end = i;
@@ -410,29 +489,19 @@ static std::vector<TokenRun> tokenizeLine(const std::string& line) {
                    (line[end] >= '0' && line[end] <= '9') || line[end] == '_'))
                 end++;
             std::string word = line.substr(i, end - i);
-            // Case-insensitive comparison
-            std::string lword;
-            lword.reserve(word.size());
-            for (char c : word) lword += (char)std::tolower((unsigned char)c);
             COLORREF col = g_theme.text;
-            if (lword == "if" || lword == "then" || lword == "else" || lword == "response" || lword == "def" || lword == "run")
-                col = g_theme.synKw;
-            else if (lword == "int" || lword == "float" || lword == "string" || lword == "bool")
-                col = g_theme.synTy;
-            else if (lword == "print" || lword == "input" || lword == "html")
-                col = g_theme.synFn;
-            else if (lword == "true" || lword == "false")
-                col = g_theme.synStr;
+            if (isKeyword(word)) col = g_theme.synKw;
+            else if (isType(word)) col = g_theme.synTy;
+            else if (isBuiltin(word)) col = g_theme.synFn;
             addRun((int)i, (int)end, col);
             i = end;
             continue;
         }
-        
+
         // Operators / punctuation
-        const char* ops = "=.<>,!+-*/()[]";
+        const char* ops = "=.<>,!+-*/()[]{}";
         if (strchr(ops, c)) {
             size_t end = i + 1;
-            // Two-char operators: ==, =>, <=, !=
             if (end < line.size()) {
                 char n = line[end];
                 if ((c == '=' && n == '=') || (c == '=' && n == '>') ||
@@ -446,7 +515,7 @@ static std::vector<TokenRun> tokenizeLine(const std::string& line) {
 
         i++;
     }
-    
+
     return runs;
 }
 
@@ -456,18 +525,17 @@ static void insertChar(char ch) {
     line.insert(g_buf.cx, 1, ch);
     g_buf.cx++;
     g_buf.dirty = true;
-    g_buf.selX = g_buf.selY = -1; // clear selection
+    g_buf.selX = g_buf.selY = -1;
 }
 
 static void deleteChar() {
     if (g_buf.selX >= 0 && g_buf.selY >= 0) {
-        // Delete selection: replace with empty string
         int y1 = std::min(g_buf.cy, g_buf.selY);
         int y2 = std::max(g_buf.cy, g_buf.selY);
         int x1 = (g_buf.cy < g_buf.selY || (g_buf.cy == g_buf.selY && g_buf.cx < g_buf.selX)) ? g_buf.cx : g_buf.selX;
         int x2 = (g_buf.cy > g_buf.selY || (g_buf.cy == g_buf.selY && g_buf.cx > g_buf.selX)) ? g_buf.cx : g_buf.selX;
         x2 = std::min(x2, (int)g_buf.line(y2).size());
-        
+
         if (y1 == y2) {
             g_buf.line(y1).erase(x1, x2 - x1);
         } else {
@@ -512,7 +580,9 @@ static void newLine() {
     g_buf.line(g_buf.cy).erase(g_buf.cx);
     g_buf.lines.insert(g_buf.lines.begin() + g_buf.cy + 1, rest);
     g_buf.cy++;
-    g_buf.cx = 0;
+    std::string indent = getAutoIndent();
+    g_buf.line(g_buf.cy).insert(0, indent);
+    g_buf.cx = (int)indent.size();
     g_buf.dirty = true;
     g_buf.selX = g_buf.selY = -1;
 }
@@ -568,7 +638,6 @@ static void moveCursor(int dx, int dy, bool shift) {
     if (dx != 0) {
         g_buf.targetCol = -1;
         int nc = g_buf.cx + dx;
-        // Wrap to previous/next line
         if (nc < 0 && g_buf.cy > 0) {
             g_buf.cy--;
             g_buf.cx = (int)g_buf.line(g_buf.cy).size();
@@ -579,8 +648,6 @@ static void moveCursor(int dx, int dy, bool shift) {
             g_buf.cx = std::max(0, std::min((int)g_buf.line(g_buf.cy).size(), nc));
         }
     }
-    // Ensure cursor is visible
-    int visLines = 1; // will be updated in paint
     if (g_buf.cy < g_buf.scroll) g_buf.scroll = g_buf.cy;
 }
 
@@ -623,7 +690,6 @@ static void paintEverything(HDC dc, int w, int h) {
         DrawTextA(dc, m, -1, &rm, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         mx += 45;
     }
-    // Accent line at bottom of menu bar
     {
         HPEN pen = CreatePen(PS_SOLID, 1, g_theme.accentDim);
         HPEN oldPen = (HPEN)SelectObject(dc, pen);
@@ -644,14 +710,32 @@ static void paintEverything(HDC dc, int w, int h) {
     // ── Tab bar ──
     fillRect(dc, 0, menuH, w, TAB_H, g_theme.tabBg);
     int tx = 4;
-    int tabW = 180;
-    fillRect(dc, tx, menuH + 2, tabW, TAB_H - 2, g_theme.tabActive);
-    SetTextColor(dc, g_theme.text);
-    std::string tabName = g_buf.filepath.empty() ? "untitled.uc" : g_buf.filepath.substr(g_buf.filepath.find_last_of("\\/") + 1);
-    if (g_buf.dirty) tabName += " *";
-    RECT rtab = {tx + 8, menuH, tx + tabW - 8, menuH + TAB_H};
-    DrawTextA(dc, tabName.c_str(), -1, &rtab, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-    tx += tabW + 2;
+    int tabW = 150;
+    int maxTabs = (w - 30) / (tabW + 2);
+    int startTab = std::max(0, g_activeTab - maxTabs + 1);
+    if ((int)g_bufs.size() <= maxTabs) startTab = 0;
+
+    for (int ti = startTab; ti < (int)g_bufs.size() && ti < startTab + maxTabs; ++ti) {
+        bool active = (ti == g_activeTab);
+        fillRect(dc, tx, menuH + 2, tabW, TAB_H - 2, active ? g_theme.tabActive : g_theme.tabInactive);
+        // Accent line on active tab
+        if (active) {
+            fillRect(dc, tx, menuH + TAB_H - 2, tabW, 2, g_theme.accent);
+        }
+        SetTextColor(dc, active ? g_theme.text : g_theme.textDim);
+        std::string tabName = g_bufs[ti].filepath.empty() ? "untitled.uc" : g_bufs[ti].filepath.substr(g_bufs[ti].filepath.find_last_of("\\/") + 1);
+        if (g_bufs[ti].dirty) tabName += " *";
+        RECT rtab = {tx + 6, menuH, tx + tabW - 6, menuH + TAB_H};
+        DrawTextA(dc, tabName.c_str(), -1, &rtab, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        // Close button 'x' on tab
+        if (g_bufs.size() > 1) {
+            SetTextColor(dc, g_theme.textFaint);
+            RECT rcx = {tx + tabW - 18, menuH, tx + tabW - 4, menuH + TAB_H};
+            DrawTextA(dc, "x", 1, &rcx, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        }
+        tx += tabW + 2;
+    }
+    // "+" button for new tab
     fillRect(dc, tx, menuH + 6, 18, 18, g_theme.tabInactive);
     SetTextColor(dc, g_theme.textFaint);
     RECT rnt = {tx, menuH, tx + 18, menuH + TAB_H};
@@ -667,9 +751,7 @@ static void paintEverything(HDC dc, int w, int h) {
 
     // ── Editor Area ──
     if (edH > 0) {
-        // Gutter
         fillRect(dc, 0, edTop, GUTTER_W, edH, g_theme.gutter);
-        // Gutter border
         HPEN pen = CreatePen(PS_SOLID, 1, g_theme.border);
         HPEN oldPen = (HPEN)SelectObject(dc, pen);
         MoveToEx(dc, GUTTER_W, edTop, NULL);
@@ -677,7 +759,7 @@ static void paintEverything(HDC dc, int w, int h) {
         SelectObject(dc, oldPen);
         DeleteObject(pen);
 
-        // Scrollbar indicator in gutter (6px wide on right edge)
+        // Scrollbar indicator
         {
             int totalLines = (std::max)(1, g_buf.lineCount());
             int viewLines = edH / CHAR_H;
@@ -688,10 +770,8 @@ static void paintEverything(HDC dc, int w, int h) {
             fillRect(dc, GUTTER_W - 6, sbY, 4, sbH, g_theme.textFaint);
         }
 
-        // Editor surface
         fillRect(dc, GUTTER_W, edTop, w - GUTTER_W, edH, g_theme.surface);
 
-        // Draw line numbers and code
         HFONT edFont = makeFont(CHAR_H);
         SelectObject(dc, edFont);
         SetBkMode(dc, TRANSPARENT);
@@ -700,7 +780,6 @@ static void paintEverything(HDC dc, int w, int h) {
         int maxLines = edH / CHAR_H + 1;
         int visEnd = std::min(firstLine + maxLines, g_buf.lineCount());
 
-        // Update scroll if cursor below visible area
         if (g_buf.cy >= visEnd) g_buf.scroll = g_buf.cy - (edH / CHAR_H) + 1;
         if (g_buf.cy < firstLine) g_buf.scroll = g_buf.cy;
         firstLine = std::max(0, g_buf.scroll);
@@ -709,7 +788,6 @@ static void paintEverything(HDC dc, int w, int h) {
         for (int li = firstLine; li < visEnd; ++li) {
             int ly = edTop + (li - firstLine) * CHAR_H;
 
-            // Active line highlight
             if (li == g_buf.cy) {
                 fillRect(dc, GUTTER_W, ly, w - GUTTER_W, CHAR_H, g_theme.lineActive);
             }
@@ -721,7 +799,6 @@ static void paintEverything(HDC dc, int w, int h) {
             RECT gn = {0, ly, GUTTER_W - 6, ly + CHAR_H};
             DrawTextA(dc, buf, -1, &gn, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
 
-            // Selection highlight
             if (g_buf.selY >= 0) {
                 SelRange s = getSel();
                 if (li >= s.y1 && li <= s.y2) {
@@ -737,7 +814,6 @@ static void paintEverything(HDC dc, int w, int h) {
                 }
             }
 
-            // Syntax-colored text
             const std::string& line = g_buf.line(li);
             std::vector<TokenRun> runs = tokenizeLine(line);
             int paintX = GUTTER_W + 8;
@@ -747,7 +823,6 @@ static void paintEverything(HDC dc, int w, int h) {
                 SetTextColor(dc, g_theme.text);
                 TextOutA(dc, paintX, paintY, line.c_str(), (int)line.size());
             } else {
-                // Check if there's text before the first run
                 if (runs[0].start > 0) {
                     std::string pre = line.substr(0, runs[0].start);
                     SetTextColor(dc, g_theme.text);
@@ -759,6 +834,39 @@ static void paintEverything(HDC dc, int w, int h) {
                     SetTextColor(dc, run.color);
                     TextOutA(dc, paintX, paintY, seg.c_str(), (int)seg.size());
                     paintX += (int)seg.size() * CHAR_W;
+                }
+            }
+
+            // Brace matching highlight
+            if (li == g_buf.cy) {
+                int col = g_buf.cx;
+                if (col > 0) {
+                    char c = line[col - 1];
+                    if (isOpenBrace(c) || isCloseBrace(c)) {
+                        char match = matchingBrace(c);
+                        int depth = 1;
+                        if (isOpenBrace(c)) {
+                            for (int sc = col; sc < (int)line.size(); ++sc) {
+                                if (line[sc] == c) depth++;
+                                if (line[sc] == match) depth--;
+                                if (depth == 0) {
+                                    int mx = GUTTER_W + 8 + sc * CHAR_W;
+                                    fillRect(dc, mx, ly, CHAR_W, 2, g_theme.accent);
+                                    break;
+                                }
+                            }
+                        } else {
+                            for (int sc = col - 2; sc >= 0; --sc) {
+                                if (line[sc] == match) depth++;
+                                if (line[sc] == c) depth--;
+                                if (depth == 0) {
+                                    int mx = GUTTER_W + 8 + sc * CHAR_W;
+                                    fillRect(dc, mx, ly, CHAR_W, 2, g_theme.accent);
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -778,29 +886,20 @@ static void paintEverything(HDC dc, int w, int h) {
     if (outH > 0) {
         int outTop = edTop + edH;
         fillRect(dc, 0, outTop, w, outH, g_theme.outputBg);
-        // Resize handle
         fillRect(dc, 0, outTop, w, 3, g_theme.border);
 
         HFONT outFont = makeFont(CHAR_H - 2);
         SelectObject(dc, outFont);
         SetBkMode(dc, TRANSPARENT);
 
-        // Header
         fillRect(dc, 0, outTop + 3, w, 22, RGB(0x14,0x14,0x14));
-        // Accent left bar on header
         fillRect(dc, 0, outTop + 3, 3, 22, g_theme.accent);
         SetTextColor(dc, g_theme.accent);
         RECT rh = {16, outTop + 3, w - 8, outTop + 25};
         DrawTextA(dc, "OUTPUT", 6, &rh, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-        // Body
-        int ly = outTop + 26;
-        for (int i = (int)g_out.lines.size() - 1; i >= 0 && ly < outTop + outH; --i) {
-            // Draw from bottom
-        }
-        // Simpler: draw from top, scroll to bottom
         int startLine = std::max(0, (int)g_out.lines.size() - (outH - 26) / 16);
-        ly = outTop + 26;
+        int ly = outTop + 26;
         for (int i = startLine; i < (int)g_out.lines.size() && ly < outTop + outH; ++i) {
             const std::string& l = g_out.lines[i];
             if (l.find("exit 0") != std::string::npos) SetTextColor(dc, g_theme.outputSuccess);
@@ -829,11 +928,13 @@ static void paintEverything(HDC dc, int w, int h) {
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, g_theme.statusText);
     std::string statusInfo = "UCLang v1.0";
+    int wordCount = g_buf.calcWordCount();
+    std::string wcStr = "Words: " + std::to_string(wordCount) + " | Lines: " + std::to_string(g_buf.lineCount());
     RECT rs = {8, h - STATUS_H, w / 2, h};
-    DrawTextA(dc, statusInfo.c_str(), -1, &rs, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    DrawTextA(dc, (statusInfo + " | " + wcStr).c_str(), -1, &rs, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
     char pos[32];
-    std::sprintf(pos, "Ln %d, Col %d", g_buf.cy + 1, g_buf.cx + 1);
+    std::sprintf(pos, "Ln %d, Col %d | Tab %d/%d", g_buf.cy + 1, g_buf.cx + 1, g_activeTab + 1, (int)g_bufs.size());
     SetTextColor(dc, g_theme.statusText);
     rs.left = w / 2;
     DrawTextA(dc, pos, -1, &rs, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
@@ -848,9 +949,8 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_CREATE: {
         DragAcceptFiles(hWnd, TRUE);
         SetTimer(hWnd, g_cursorTimer, 530, NULL);
-
-        loadFile("test.uc");
-        g_out.add("UCLang Studio v1.0 ready.\r\n> Press F5 to run\r\n> Ctrl+Shift+C to copy output\r\n> Ctrl+Space for suggestions");
+        addTab();
+        g_out.add("UCLang Studio v1.0 ready.\r\n> Multiple tabs, brace matching, auto-indent\r\n> Press F5 to run\r\n> Ctrl+Space for suggestions\r\n> Ctrl+Tab to switch tabs");
         break;
     }
     case WM_TIMER: {
@@ -889,13 +989,41 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 1;
     case WM_CHAR: {
         if ((wp == VK_BACK) || (wp >= 32 && wp <= 126)) {
-            bool wasAlpha = g_buf.cx > 0 && (std::isalnum((unsigned char)g_buf.line(g_buf.cy)[g_buf.cx-1]) || g_buf.line(g_buf.cy)[g_buf.cx-1] == '_');
             if (wp == VK_BACK) {
+                // Auto-delete matching brace pair
+                if (g_buf.cx > 0 && g_buf.cx < (int)g_buf.line(g_buf.cy).size()) {
+                    char prev = g_buf.line(g_buf.cy)[g_buf.cx - 1];
+                    char cur = g_buf.line(g_buf.cy)[g_buf.cx];
+                    if ((prev == '{' && cur == '}') || (prev == '(' && cur == ')') || (prev == '[' && cur == ']')) {
+                        g_buf.line(g_buf.cy).erase(g_buf.cx, 1);
+                    }
+                }
                 deleteChar();
                 hideSuggestions();
             } else {
-                insertChar((char)wp);
-                // Auto-trigger suggestions after 2+ chars of a word
+                char ch = (char)wp;
+                // Auto-close brackets
+                if (ch == '{' || ch == '(' || ch == '[') {
+                    char close = (ch == '{') ? '}' : (ch == '(') ? ')' : ']';
+                    insertChar(ch);
+                    insertChar(close);
+                    g_buf.cx--; // put cursor between braces
+                } else if (ch == '}' || ch == ')' || ch == ']') {
+                    // Skip over existing closing bracket if already present
+                    if (g_buf.cx < (int)g_buf.line(g_buf.cy).size() && g_buf.line(g_buf.cy)[g_buf.cx] == ch) {
+                        g_buf.cx++;
+                    } else {
+                        insertChar(ch);
+                    }
+                } else if (ch == '"') {
+                    // Auto-close quote
+                    insertChar('"');
+                    insertChar('"');
+                    g_buf.cx--;
+                } else {
+                    insertChar(ch);
+                }
+                // Auto-trigger suggestions
                 bool isAlpha = (wp >= 'a' && wp <= 'z') || (wp >= 'A' && wp <= 'Z') || wp == '_';
                 if (isAlpha) {
                     std::string prefix;
@@ -928,11 +1056,21 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         case VK_DOWN:
             if (g_showSug) { g_sugSel = (std::min)((int)g_suggestions.size() - 1, g_sugSel + 1); InvalidateRect(g_hSugWnd, NULL, TRUE); break; }
             moveCursor(0, 1, shift); break;
+        case VK_TAB:
+            if (ctrl) {
+                // Switch to next tab
+                if (shift) g_activeTab = (g_activeTab - 1 + (int)g_bufs.size()) % (int)g_bufs.size();
+                else g_activeTab = (g_activeTab + 1) % (int)g_bufs.size();
+                InvalidateRect(hWnd, NULL, FALSE);
+            } else {
+                // Insert spaces for tab
+                for (int i = 0; i < 4; ++i) insertChar(' ');
+                InvalidateRect(hWnd, NULL, FALSE);
+            }
+            break;
         case VK_RETURN:
             if (g_showSug && !g_suggestions.empty()) {
-                // Insert selected suggestion
                 const std::string& sug = g_suggestions[g_sugSel];
-                // Erase current partial word
                 int start = g_buf.cx;
                 while (start > 0 && (std::isalnum((unsigned char)g_buf.line(g_buf.cy)[start-1]) || g_buf.line(g_buf.cy)[start-1] == '_'))
                     start--;
@@ -967,17 +1105,15 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         case VK_PRIOR: hideSuggestions(); moveCursor(0, -20, shift); break;
         case VK_NEXT:  hideSuggestions(); moveCursor(0, 20, shift); break;
         case VK_DELETE: hideSuggestions(); deleteForward(); break;
+        case VK_F4: g_showOutput = !g_showOutput; InvalidateRect(hWnd, NULL, FALSE); break;
         case VK_F5: {
-            // Run current file
             g_out.add("> ── running ──");
             if (g_buf.dirty) {
-                // Save to temp
                 std::string tmp = g_buf.filepath.empty() ? "_tmp.uc" : g_buf.filepath;
                 saveFile(tmp);
             }
             const char* path = g_buf.filepath.empty() ? "_tmp.uc" : g_buf.filepath.c_str();
             UCLangVM* vm = uclang_vm_new();
-            // Set input callback for Input() statements
             static thread_local std::string s_inputRet;
             uclang_vm_set_input(vm, [](const char* prompt, void*) -> const char* {
                 s_inputRet = showInputDialog(prompt ? prompt : "");
@@ -995,7 +1131,6 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         case 'C': if (ctrl) {
             bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
             if (shift) {
-                // Copy output panel
                 std::string all;
                 for (auto& l : g_out.lines) all += l + "\r\n";
                 if (!all.empty()) {
@@ -1014,11 +1149,13 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
                 }
             }
         } break;
+        case 'D': if (ctrl && ctrl) { /* Ctrl+D to duplicate line */ } break;
         case 'X': if (ctrl) { std::string sel = getSelectedText(); if (!sel.empty()) { OpenClipboard(NULL); EmptyClipboard(); HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, sel.size()+1); if (h) { char* d = (char*)GlobalLock(h); std::memcpy(d, sel.c_str(), sel.size()+1); GlobalUnlock(h); SetClipboardData(CF_TEXT, h); } CloseClipboard(); } deleteChar(); } break;
         case 'V': if (ctrl) { OpenClipboard(NULL); HANDLE h = GetClipboardData(CF_TEXT); if (h) { char* d = (char*)GlobalLock(h); if (d) { for (char* p = d; *p; ++p) { if (*p == '\r') continue; if (*p == '\n') newLine(); else insertChar(*p); } } GlobalUnlock(h); } CloseClipboard(); } break;
-        case 'S': if (ctrl) { if (!g_buf.filepath.empty()) { saveFile(g_buf.filepath); } else { OPENFILENAMEA ofn; char fn[MAX_PATH]=""; memset(&ofn,0,sizeof(ofn)); ofn.lStructSize=sizeof(ofn); ofn.hwndOwner=hWnd; ofn.lpstrFile=fn; ofn.nMaxFile=MAX_PATH; ofn.lpstrFilter="UCLang files\0*.uc\0All files\0*.*\0"; ofn.Flags=OFN_OVERWRITEPROMPT|OFN_PATHMUSTEXIST; if (GetSaveFileNameA(&ofn)) saveFile(fn); } } break;
-        case 'O': if (ctrl) { OPENFILENAMEA ofn; char fn[MAX_PATH]=""; memset(&ofn,0,sizeof(ofn)); ofn.lStructSize=sizeof(ofn); ofn.hwndOwner=hWnd; ofn.lpstrFile=fn; ofn.nMaxFile=MAX_PATH; ofn.lpstrFilter="UCLang files\0*.uc\0All files\0*.*\0"; ofn.Flags=OFN_FILEMUSTEXIST|OFN_PATHMUSTEXIST; if (GetOpenFileNameA(&ofn)) loadFile(fn); } break;
-        case 'N': if (ctrl) newFile(); break;
+        case 'S': if (ctrl) { if (!g_buf.filepath.empty()) { saveFile(g_buf.filepath); } else { OPENFILENAMEA ofn; char fn[MAX_PATH]=""; memset(&ofn,0,sizeof(ofn)); ofn.lStructSize=sizeof(ofn); ofn.hwndOwner=hWnd; ofn.lpstrFile=fn; ofn.nMaxFile=MAX_PATH; ofn.lpstrFilter="UCLang files\0*.uc\0All files\0*.*\0"; ofn.Flags=OFN_OVERWRITEPROMPT|OFN_PATHMUSTEXIST; if (GetSaveFileNameA(&ofn)) saveFile(fn); } InvalidateRect(hWnd, NULL, FALSE); } break;
+        case 'O': if (ctrl) { OPENFILENAMEA ofn; char fn[MAX_PATH]=""; memset(&ofn,0,sizeof(ofn)); ofn.lStructSize=sizeof(ofn); ofn.hwndOwner=hWnd; ofn.lpstrFile=fn; ofn.nMaxFile=MAX_PATH; ofn.lpstrFilter="UCLang files\0*.uc\0All files\0*.*\0"; ofn.Flags=OFN_FILEMUSTEXIST|OFN_PATHMUSTEXIST; if (GetOpenFileNameA(&ofn)) loadFile(fn); InvalidateRect(hWnd, NULL, FALSE); } break;
+        case 'N': if (ctrl) newFile(); InvalidateRect(hWnd, NULL, FALSE); break;
+        case 'W': if (ctrl) { closeTab(g_activeTab); InvalidateRect(hWnd, NULL, FALSE); } break;
         }
         InvalidateRect(hWnd, NULL, FALSE);
         break;
@@ -1033,7 +1170,6 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         int outH = g_showOutput ? (std::max)(MIN_OUTPUT_H, (std::min)(g_outputH, ch - edTop - STATUS_H - MIN_OUTPUT_H)) : 0;
         int edH = ch - edTop - outH - STATUS_H;
 
-        // Menu bar clicks
         if (y >= 0 && y < menuH) {
             const char* menus[] = {"File", "Edit", "View", "Run", "Help"};
             int mx = 8;
@@ -1054,9 +1190,36 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         }
 
-        // Output panel resize handle
+        // Tab bar click
+        if (y >= menuH && y < edTop) {
+            int tx = 4;
+            int tabW = 150;
+            int maxTabs = (cw - 30) / (tabW + 2);
+            int startTab = std::max(0, g_activeTab - maxTabs + 1);
+            if ((int)g_bufs.size() <= maxTabs) startTab = 0;
+            for (int ti = startTab; ti < (int)g_bufs.size() && ti < startTab + maxTabs; ++ti) {
+                int tabEndX = tx + tabW + 2;
+                if (x >= tx && x < tabEndX) {
+                    // Check for close button
+                    if (x > tx + tabW - 18 && x < tabEndX - 2 && g_bufs.size() > 1) {
+                        closeTab(ti);
+                    } else {
+                        g_activeTab = ti;
+                    }
+                    InvalidateRect(hWnd, NULL, FALSE);
+                    break;
+                }
+                tx = tabEndX;
+            }
+            // Check for "+" button click
+            if (x >= tx && x < tx + 22) {
+                addTab();
+                InvalidateRect(hWnd, NULL, FALSE);
+            }
+            break;
+        }
+
         if (g_showOutput && y >= edTop + edH && y < edTop + edH + 3) {
-            // Simple drag-resize of output panel — track in mouse move
             g_dragStart = {x, y};
             SetCapture(hWnd);
             break;
@@ -1086,7 +1249,6 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             int outH = g_showOutput ? (std::max)(MIN_OUTPUT_H, (std::min)(g_outputH, ch - edTop - STATUS_H - MIN_OUTPUT_H)) : 0;
             int edH = ch - edTop - outH - STATUS_H;
 
-            // Output panel resize
             if (GetCapture() == hWnd && y > edTop + edH + 3) {
                 int newOutH = ch - edTop - STATUS_H - (y - edTop);
                 g_outputH = (std::max)(MIN_OUTPUT_H, (std::min)(newOutH, ch - edTop - STATUS_H - 50));
@@ -1115,9 +1277,12 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_DROPFILES: {
         HDROP hDrop = (HDROP)wp;
         char path[MAX_PATH];
-        DragQueryFileA(hDrop, 0, path, MAX_PATH);
+        UINT count = DragQueryFileA(hDrop, 0xFFFFFFFF, NULL, 0);
+        for (UINT i = 0; i < count; ++i) {
+            DragQueryFileA(hDrop, i, path, MAX_PATH);
+            loadFile(path);
+        }
         DragFinish(hDrop);
-        loadFile(path);
         InvalidateRect(hWnd, NULL, FALSE);
         break;
     }
@@ -1149,6 +1314,8 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case ID_EXIT: PostQuitMessage(0); break;
         case ID_RUN: PostMessage(hWnd, WM_KEYDOWN, VK_F5, 0); break;
+        case ID_NEWTAB: addTab(); InvalidateRect(hWnd, NULL, FALSE); break;
+        case ID_CLOSETAB: closeTab(g_activeTab); InvalidateRect(hWnd, NULL, FALSE); break;
         case ID_COPYOUTPUT: {
             std::string all;
             for (auto& l : g_out.lines) all += l + "\r\n";
@@ -1160,7 +1327,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
             break;
         }
-        case ID_ABOUT: MessageBoxA(hWnd, "UCLang Studio v1.0\nA native IDE for the UCLang programming language.\n\nZero third-party dependencies.\nBuilt entirely with the Win32 API.", "About UCLang Studio", MB_OK); break;
+        case ID_ABOUT: MessageBoxA(hWnd, "UCLang Studio v1.0\nA native IDE for the UCLang programming language.\n\nZero third-party dependencies.\nBuilt entirely with the Win32 API.\n\nFeatures: Multiple tabs, brace matching, auto-indent,\nsyntax highlighting, autocomplete, output panel.", "About UCLang Studio", MB_OK); break;
         case ID_COMPILE:
         case ID_BUILD: {
             if (g_buf.dirty) {
@@ -1210,6 +1377,9 @@ static HMENU createMenus() {
     AppendMenuA(file, MF_STRING, ID_OPEN, "&Open...\tCtrl+O");
     AppendMenuA(file, MF_STRING, ID_SAVE, "&Save\tCtrl+S");
     AppendMenuA(file, MF_SEPARATOR, 0, NULL);
+    AppendMenuA(file, MF_STRING, ID_NEWTAB, "New &Tab\tCtrl+T");
+    AppendMenuA(file, MF_STRING, ID_CLOSETAB, "&Close Tab\tCtrl+W");
+    AppendMenuA(file, MF_SEPARATOR, 0, NULL);
     AppendMenuA(file, MF_STRING, ID_EXIT, "E&xit");
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)file, "&File");
 
@@ -1224,7 +1394,7 @@ static HMENU createMenus() {
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)edit, "&Edit");
 
     HMENU view = CreatePopupMenu();
-    AppendMenuA(view, MF_STRING, 0, "&Output Panel\tF4"); // stub
+    AppendMenuA(view, MF_STRING, 0, "&Output Panel\tF4");
     AppendMenuA(bar, MF_POPUP, (UINT_PTR)view, "&View");
 
     HMENU run = CreatePopupMenu();
@@ -1247,7 +1417,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int show) {
     g_hInst = hInst;
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
-    // Register class
     const char* CLASS = "UCLangStudio";
     WNDCLASSA wc = {};
     wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
@@ -1258,7 +1427,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int show) {
     wc.lpszClassName = CLASS;
     RegisterClassA(&wc);
 
-    // Create window — borderless so our custom chrome is the only chrome
     g_hWnd = CreateWindowExA(WS_EX_ACCEPTFILES,
         CLASS, "UCLang Studio",
         WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,

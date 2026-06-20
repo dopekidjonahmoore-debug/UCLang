@@ -39,7 +39,7 @@ Token Parser::expect(TokenType type, const std::string& msg) {
             : msg;
         throw std::runtime_error("Parse error at Ln " +
             std::to_string(peek().line) + ":" +
-            std::to_string(peek().column) + " — " + hint);
+            std::to_string(peek().column) + " \u2014 " + hint);
     }
     return advance();
 }
@@ -63,25 +63,17 @@ Token Parser::previous() const {
 
 int Parser::precedence(TokenType type) const {
     switch (type) {
-        case TokenType::OP_OR:
-            return 1;
-        case TokenType::OP_AND:
-            return 2;
-        case TokenType::OP_EQUAL:
-        case TokenType::OP_NEQ:
-        case TokenType::OP_GTE:
-        case TokenType::OP_LTE:
-        case TokenType::OP_GT:
-        case TokenType::OP_LT:
+        case TokenType::OP_OR:    return 1;
+        case TokenType::OP_AND:   return 2;
+        case TokenType::OP_EQUAL: case TokenType::OP_NEQ:
+        case TokenType::OP_GTE:   case TokenType::OP_LTE:
+        case TokenType::OP_GT:    case TokenType::OP_LT:
             return 3;
-        case TokenType::OP_PLUS:
-        case TokenType::OP_MINUS:
+        case TokenType::OP_PLUS:  case TokenType::OP_MINUS:
             return 4;
-        case TokenType::OP_STAR:
-        case TokenType::OP_SLASH:
+        case TokenType::OP_STAR:  case TokenType::OP_SLASH:
             return 5;
-        default:
-            return 0;
+        default: return 0;
     }
 }
 
@@ -96,24 +88,16 @@ NodePtr Parser::parse() {
 NodePtr Parser::parseProgram() {
     auto node = Node::make<ProgramNode>();
     auto& prog = std::get<ProgramNode>(node->data);
-    int stmt_count = 0;
 
     while (!atEnd() && peek().type != TokenType::END_OF_FILE) {
         try {
             auto stmt = parseStatement();
-            if (std::get_if<FuncDefNode>(&stmt->data)) {
-                auto& fd = std::get<FuncDefNode>(stmt->data);
-                printf("  PUSH FUNC %s (total %d)\n", fd.name.c_str(), stmt_count + 1);
-            }
             prog.stmts.push_back(std::move(stmt));
-            stmt_count++;
         } catch (const std::runtime_error&) {
-            printf("  PARSE ERROR at Ln %d, sync to next .\n", peek().line);
             while (!atEnd() && peek().type != TokenType::STMT_END) advance();
             if (peek().type == TokenType::STMT_END) advance();
         }
     }
-    printf("  TOTAL STMTS PARSED: %d\n", stmt_count);
 
     return node;
 }
@@ -131,7 +115,7 @@ NodePtr Parser::parseStatement() {
     switch (tok.type) {
 
         case TokenType::KW_DEF: {
-            advance(); // consume 'def'
+            advance();
             return parseFuncDef();
         }
 
@@ -164,32 +148,112 @@ NodePtr Parser::parseStatement() {
         case TokenType::KW_RESPONSE:
             return parseReturn();
 
+        // ── OOP statements ─────────────────────────────────
+        case TokenType::KW_CLASS:
+            return parseClassDef();
+
+        case TokenType::KW_STRUCT:
+            return parseStructDef();
+
+        case TokenType::KW_INTERFACE:
+            return parseInterfaceDef();
+
+        case TokenType::KW_IMPORT:
+            return parseImport();
+
+        case TokenType::KW_YIELD:
+            return parseYield();
+
+        case TokenType::KW_NEW: {
+            NodePtr expr = parseNewExpr();
+            expect(TokenType::STMT_END, "expected . after new expression");
+            return expr;
+        }
+
+        case TokenType::KW_THIS:
+        case TokenType::KW_SUPER: {
+            NodePtr expr = parsePrimary();
+            // Check for member access or call
+            if (peek().type == TokenType::OP_DOT || peek().type == TokenType::OP_ARROW) {
+                expr = parsePostfixExpr(std::move(expr));
+            }
+            // Handle assignment to member: this.field == value
+            if (auto* mg = std::get_if<MemberGetNode>(&expr->data)) {
+                if (peek().type == TokenType::OP_ASSIGN) {
+                    advance();
+                    NodePtr val = parseExpr();
+                    expect(TokenType::STMT_END, "expected . after member assignment");
+                    auto ms = Node::make<MemberSetNode>();
+                    auto& m = std::get<MemberSetNode>(ms->data);
+                    m.object = std::move(mg->object);
+                    m.member = mg->member;
+                    m.value = std::move(val);
+                    return ms;
+                }
+            }
+            expect(TokenType::STMT_END, "expected . after expression");
+            return expr;
+        }
+        case TokenType::KW_NULL: {
+            NodePtr expr = parsePrimary();
+            // Check for member access or call
+            if (peek().type == TokenType::OP_DOT || peek().type == TokenType::OP_ARROW) {
+                expr = parsePostfixExpr(std::move(expr));
+            }
+            expect(TokenType::STMT_END, "expected . after expression");
+            return expr;
+        }
+
         case TokenType::IDENTIFIER: {
-            if (peek(1).type == TokenType::OP_DOT)
-                return parseNamespaceCall(tok, true);
             if (tok.value == "gameloop" && peek(1).type == TokenType::LPAREN)
                 return parseGameLoop();
+
+            // Check for variable assignment: var == expr
             if (peek(1).type == TokenType::OP_ASSIGN) {
                 advance();
                 return parseAssign(tok);
             }
-    if (peek(1).type == TokenType::COMMA) {
-        advance();
-        return parseMultiAssign(tok);
-    }
+
+            // Multi-assign: a, b == expr
+            if (peek(1).type == TokenType::COMMA) {
+                advance();
+                return parseMultiAssign(tok);
+            }
+
+            // Type check: var = Int/Float/String/Bool
             if (peek(1).type == TokenType::OP_EQUAL) {
                 TokenType t2 = peek(2).type;
-                if (t2 == TokenType::TYPE_INT   ||
-                    t2 == TokenType::TYPE_FLOAT ||
-                    t2 == TokenType::TYPE_STRING ||
-                    t2 == TokenType::TYPE_BOOL) {
+                if (t2 == TokenType::TYPE_INT || t2 == TokenType::TYPE_FLOAT ||
+                    t2 == TokenType::TYPE_STRING || t2 == TokenType::TYPE_BOOL) {
                     advance();
                     return parseTypeCheck(tok);
                 }
             }
-            if (peek(1).type == TokenType::LPAREN)
-                return parseFuncDef();
-            break;
+
+            // Parse as expression (may include member access chains)
+            {
+                NodePtr expr = parsePrimary();
+                // Handle member access chains
+                while (peek().type == TokenType::OP_DOT || peek().type == TokenType::OP_ARROW) {
+                    expr = parsePostfixExpr(std::move(expr));
+                }
+                // Handle assignment to member: expr.id == value
+                if (auto* mg = std::get_if<MemberGetNode>(&expr->data)) {
+                    if (peek().type == TokenType::OP_ASSIGN) {
+                        advance();
+                        NodePtr val = parseExpr();
+                        expect(TokenType::STMT_END, "expected . after member assignment");
+                        auto ms = Node::make<MemberSetNode>();
+                        auto& m = std::get<MemberSetNode>(ms->data);
+                        m.object = std::move(mg->object);
+                        m.member = mg->member;
+                        m.value = std::move(val);
+                        return ms;
+                    }
+                }
+                expect(TokenType::STMT_END, "expected . after expression");
+                return expr;
+            }
         }
 
         default:
@@ -203,17 +267,54 @@ NodePtr Parser::parseStatement() {
 }
 
 // ==========================================================
-//  Function definition   funcName(params. body. ).
+//  Postfix expression: handle . and -> member access chains
+// ==========================================================
+
+NodePtr Parser::parsePostfixExpr(NodePtr obj) {
+    while (peek().type == TokenType::OP_DOT || peek().type == TokenType::OP_ARROW) {
+        advance(); // consume . or ->
+        Token member = expect(TokenType::IDENTIFIER, "expected member name");
+
+        if (peek().type == TokenType::LPAREN) {
+            // Method call: obj.member(args.)
+            advance(); // consume (
+            std::vector<NodePtr> args;
+            if (peek().type != TokenType::STMT_END && peek().type != TokenType::RPAREN) {
+                args.push_back(parseExpr());
+                while (peek().type == TokenType::COMMA) {
+                    advance();
+                    args.push_back(parseExpr());
+                }
+            }
+            if (peek().type == TokenType::STMT_END) advance();
+            if (peek().type == TokenType::RPAREN) advance();
+
+            auto mc = Node::make<MemberCallNode>();
+            auto& m = std::get<MemberCallNode>(mc->data);
+            m.object = std::move(obj);
+            m.member = member.value;
+            m.args = std::move(args);
+            obj = std::move(mc);
+        } else {
+            // Property access: obj.member
+            auto mg = Node::make<MemberGetNode>();
+            auto& m = std::get<MemberGetNode>(mg->data);
+            m.object = std::move(obj);
+            m.member = member.value;
+            obj = std::move(mg);
+        }
+    }
+    return obj;
+}
+
+// ==========================================================
+//  Function definition   def name(params. body. ).
 // ==========================================================
 
 NodePtr Parser::parseFuncDef() {
     Token nameTok = expect(TokenType::IDENTIFIER, "expected function name");
-    printf("  PARSING FUNC: %s\n", nameTok.value.c_str());
     expect(TokenType::LPAREN);
 
-    // Parse params until DOT or RPAREN.
-    // An identifier is a param only if followed by `,`, `.`, or `(`.
-    // Otherwise (e.g. followed by `==`) it's a body statement.
     std::vector<std::string> params;
     while (peek().type == TokenType::IDENTIFIER) {
         TokenType next = peek(1).type;
@@ -224,23 +325,18 @@ NodePtr Parser::parseFuncDef() {
     }
     expect(TokenType::STMT_END, "expected . after parameter list");
 
-    // Parse body statements until closing RPAREN
     std::vector<NodePtr> body;
     while (!atEnd() && peek().type != TokenType::RPAREN) {
         try {
             body.push_back(parseStatement());
-        } catch (const std::runtime_error& e) {
-            // Skip failed statement; sync to next STMT_END
+        } catch (const std::runtime_error&) {
             while (!atEnd() && peek().type != TokenType::STMT_END) advance();
             if (peek().type == TokenType::STMT_END) advance();
         }
     }
 
-    printf("  FUNC '%s' body done (stmts: %zu), closing ", nameTok.value.c_str(), body.size());
-
     expect(TokenType::RPAREN, "expected ) to close function definition");
     expect(TokenType::STMT_END, "expected . after function definition");
-    printf("OK\n");
 
     return Node::make<FuncDefNode>(nameTok.value, std::move(params), std::move(body));
 }
@@ -251,11 +347,10 @@ NodePtr Parser::parseFuncDef() {
 
 NodePtr Parser::parseFuncCall() {
     expect(TokenType::KW_RUN);
-    // Accept either STMT_END (default) or OP_DOT for run.func()
     if (peek().type == TokenType::OP_DOT || peek().type == TokenType::STMT_END)
         advance();
     else
-        expect(TokenType::STMT_END);          // the . after "run"
+        expect(TokenType::STMT_END);
     Token nameTok = advance();
     if (nameTok.type != TokenType::IDENTIFIER
         && nameTok.type != TokenType::BUILTIN_PRINT
@@ -272,7 +367,6 @@ NodePtr Parser::parseFuncCall() {
             args.push_back(parseExpr());
         }
     } else {
-        // No args: consume the DOT arg terminator if present
         if (peek().type == TokenType::STMT_END) advance();
     }
 
@@ -283,12 +377,11 @@ NodePtr Parser::parseFuncCall() {
 }
 
 // ==========================================================
-//  Function call in expression   name(args.).
-//  Used for calls like int_to_str(...) inside expressions.
+//  Function call in expression   name(args.)
 // ==========================================================
 
 NodePtr Parser::parseFuncCallExpr(const Token& nameTok) {
-    advance(); // consume identifier (nameTok)
+    advance();
     expect(TokenType::LPAREN);
 
     std::vector<NodePtr> args;
@@ -306,12 +399,38 @@ NodePtr Parser::parseFuncCallExpr(const Token& nameTok) {
 }
 
 // ==========================================================
+//  Bare function-call statement   funcname(args.).
+// ==========================================================
+
+NodePtr Parser::parseFuncCallStmt(const Token& nameTok) {
+    advance();
+    expect(TokenType::LPAREN);
+
+    std::vector<NodePtr> args;
+    if (peek().type != TokenType::STMT_END && peek().type != TokenType::RPAREN) {
+        args.push_back(parseExpr());
+        while (peek().type == TokenType::COMMA) {
+            advance();
+            args.push_back(parseExpr());
+        }
+    }
+
+    if (peek().type == TokenType::STMT_END) advance();
+    if (peek().type == TokenType::RPAREN) advance();
+    expect(TokenType::STMT_END, "expected . after function call");
+
+    return Node::make<FuncCallNode>(nameTok.value, std::move(args));
+}
+
+// ==========================================================
 //  Namespace function call   Window.open(args.).
+//  Still used for top-level namespace calls in expression
+//  context (e.g. inside parsePrimary).
 // ==========================================================
 
 NodePtr Parser::parseNamespaceCall(const Token& ns, bool consumeStmtEnd) {
-    advance(); // consume namespace identifier
-    advance(); // consume OP_DOT
+    advance();
+    advance();
     Token nameTok = expect(TokenType::IDENTIFIER, "expected function name after namespace.");
     expect(TokenType::LPAREN, "expected ( after function name");
 
@@ -335,7 +454,7 @@ NodePtr Parser::parseNamespaceCall(const Token& ns, bool consumeStmtEnd) {
 // ==========================================================
 
 NodePtr Parser::parseGameLoop() {
-    advance(); // consume "GameLoop" identifier
+    advance();
     expect(TokenType::LPAREN);
 
     expect(TokenType::IDENTIFIER, "expected 'update' section");
@@ -371,9 +490,7 @@ NodePtr Parser::parseGameLoop() {
 NodePtr Parser::parseIf() {
     expect(TokenType::KW_IF);
     expect(TokenType::LPAREN);
-
     NodePtr cond = parseExpr();
-
     expect(TokenType::KW_THEN);
     expect(TokenType::LPAREN);
 
@@ -412,10 +529,10 @@ NodePtr Parser::parseWhile() {
     std::vector<NodePtr> body;
     while (!atEnd() && peek().type != TokenType::RPAREN)
         body.push_back(parseStatement());
-    if (peek().type == TokenType::RPAREN) advance();      // ) close then body
-    if (peek().type == TokenType::STMT_END) advance();    // .
-    if (peek().type == TokenType::RPAREN) advance();      // ) close While(
-    if (peek().type == TokenType::STMT_END) advance();    // .
+    if (peek().type == TokenType::RPAREN) advance();
+    if (peek().type == TokenType::STMT_END) advance();
+    if (peek().type == TokenType::RPAREN) advance();
+    if (peek().type == TokenType::STMT_END) advance();
     return Node::make<WhileNode>(std::move(cond), std::move(body));
 }
 
@@ -476,7 +593,6 @@ NodePtr Parser::parseInput() {
 
 // ==========================================================
 //  Html   Html(<html>...</html>.).
-//  Reconstructs raw HTML string from HTML tokens emitted by the lexer.
 // ==========================================================
 
 NodePtr Parser::parseHtml() {
@@ -492,38 +608,19 @@ std::string Parser::rebuildHtmlString() {
     std::ostringstream out;
     while (!atEnd()) {
         switch (peek().type) {
-            case TokenType::HTML_OPEN:
-                out << '<' << peek().value;
-                advance();
-                break;
-            case TokenType::HTML_CLOSE:
-                out << "</" << peek().value << '>';
-                advance();
-                break;
-            case TokenType::HTML_SELF_CLOSE:
-                out << " />";
-                advance();
-                break;
-            case TokenType::HTML_TAG_END:
-                out << '>';
-                advance();
-                break;
-            case TokenType::HTML_TEXT:
-                out << peek().value;
-                advance();
-                break;
+            case TokenType::HTML_OPEN:    out << '<' << peek().value; advance(); break;
+            case TokenType::HTML_CLOSE:   out << "</" << peek().value << '>'; advance(); break;
+            case TokenType::HTML_SELF_CLOSE: out << " />"; advance(); break;
+            case TokenType::HTML_TAG_END: out << '>'; advance(); break;
+            case TokenType::HTML_TEXT:    out << peek().value; advance(); break;
             case TokenType::HTML_ATTR_NAME:
-                out << ' ' << peek().value;
-                advance();
+                out << ' ' << peek().value; advance();
                 if (peek().type == TokenType::HTML_ATTR_VAL) {
-                    out << "=\"" << peek().value << '"';
-                    advance();
+                    out << "=\"" << peek().value << '"'; advance();
                 }
                 break;
-            case TokenType::RPAREN:
-                return out.str();
-            default:
-                return out.str();
+            case TokenType::RPAREN: return out.str();
+            default: return out.str();
         }
     }
     return out.str();
@@ -537,7 +634,6 @@ NodePtr Parser::parseReturn() {
     expect(TokenType::KW_RESPONSE);
     expect(TokenType::LPAREN);
 
-    // No-arg return: response(.).
     if (peek().type == TokenType::STMT_END) {
         advance();
         expect(TokenType::RPAREN, "expected ) to close response()");
@@ -595,9 +691,314 @@ NodePtr Parser::parseTypeCheck(const Token& ident) {
     expect(TokenType::OP_EQUAL);
     Token typeTok = advance();
     expect(TokenType::STMT_END);
-    // Build an Identifier node for the variable being checked
     auto exprNode = Node::make<IdentifierNode>(ident.value);
     return Node::make<TypeCheckNode>(std::move(exprNode), typeTok.value);
+}
+
+// ==========================================================
+//  ── OOP PARSING ──────────────────────────────────────────
+// ==========================================================
+
+// ==========================================================
+//  Class definition
+//  class ClassName extends Parent implements IFace1, IFace2 {
+//      [public|private|protected] [static] [override] def method(...).
+//      [public|private|protected] [static] var == expr.
+//      [public|private|protected] [static] var.
+//  }
+// ==========================================================
+
+NodePtr Parser::parseClassDef() {
+    expect(TokenType::KW_CLASS);
+    Token nameTok = expect(TokenType::IDENTIFIER, "expected class name");
+
+    std::string parent;
+    std::vector<std::string> interfaces;
+
+    // extends
+    if (peek().type == TokenType::KW_EXTENDS) {
+        advance();
+        parent = expect(TokenType::IDENTIFIER, "expected parent class name").value;
+    }
+
+    // implements
+    if (peek().type == TokenType::KW_IMPLEMENTS) {
+        advance();
+        interfaces.push_back(expect(TokenType::IDENTIFIER, "expected interface name").value);
+        while (peek().type == TokenType::COMMA) {
+            advance();
+            interfaces.push_back(expect(TokenType::IDENTIFIER, "expected interface name").value);
+        }
+    }
+
+    // Body
+    expect(TokenType::LBRACE, "expected { for class body");
+
+    std::vector<ClassMemberNode> members;
+
+    while (!atEnd() && peek().type != TokenType::RBRACE) {
+        std::string visibility = "public";
+        bool isStatic = false;
+        bool isOverride = false;
+
+        // Parse access modifiers
+        while (true) {
+            if (peek().type == TokenType::KW_PUBLIC) { visibility = "public"; advance(); }
+            else if (peek().type == TokenType::KW_PRIVATE) { visibility = "private"; advance(); }
+            else if (peek().type == TokenType::KW_PROTECTED) { visibility = "protected"; advance(); }
+            else if (peek().type == TokenType::KW_STATIC) { isStatic = true; advance(); }
+            else if (peek().type == TokenType::KW_OVERRIDE) { isOverride = true; advance(); }
+            else break;
+        }
+
+        // Method definition
+        if (peek().type == TokenType::KW_DEF) {
+            advance();
+            Token methodName = expect(TokenType::IDENTIFIER, "expected method name");
+            expect(TokenType::LPAREN);
+
+            std::vector<std::string> params;
+            while (peek().type == TokenType::IDENTIFIER) {
+                TokenType next = peek(1).type;
+                if (next == TokenType::COMMA || next == TokenType::STMT_END || next == TokenType::LPAREN) {
+                    params.push_back(advance().value);
+                    if (peek().type == TokenType::COMMA) advance();
+                } else break;
+            }
+            expect(TokenType::STMT_END, "expected . after method parameters");
+
+            std::vector<NodePtr> body;
+            while (!atEnd() && peek().type != TokenType::RPAREN) {
+                try {
+                    body.push_back(parseStatement());
+                } catch (const std::runtime_error&) {
+                    while (!atEnd() && peek().type != TokenType::STMT_END) advance();
+                    if (peek().type == TokenType::STMT_END) advance();
+                }
+            }
+            Token closeParen = advance();
+            if (closeParen.type != TokenType::RPAREN)
+                throw std::runtime_error("expected ) to close method");
+
+            ClassMemberNode cm;
+            cm.visibility = visibility;
+            cm.isStatic = isStatic;
+            cm.isOverride = isOverride;
+            cm.name = methodName.value;
+            cm.value = Node::make<FuncDefNode>(methodName.value, std::move(params), std::move(body));
+            members.push_back(std::move(cm));
+            continue;
+        }
+
+        // Field or property
+        Token fieldTok = expect(TokenType::IDENTIFIER, "expected member name");
+
+        if (peek().type == TokenType::OP_ASSIGN) {
+            advance(); // ==
+            NodePtr val = parseExpr();
+            if (peek().type == TokenType::STMT_END) advance();
+
+            ClassMemberNode cm;
+            cm.visibility = visibility;
+            cm.isStatic = isStatic;
+            cm.isOverride = isOverride;
+            cm.name = fieldTok.value;
+            cm.value = std::move(val);
+            members.push_back(std::move(cm));
+        } else if (peek().type == TokenType::STMT_END) {
+            advance(); // just a declaration without initializer
+            ClassMemberNode cm;
+            cm.visibility = visibility;
+            cm.isStatic = isStatic;
+            cm.isOverride = isOverride;
+            cm.name = fieldTok.value;
+            cm.value = nullptr;
+            members.push_back(std::move(cm));
+        } else if (peek().type == TokenType::LBRACE) {
+            // Property with get/set
+            // Skip for now - consume until RBRACE
+            advance();
+            while (!atEnd() && peek().type != TokenType::RBRACE) advance();
+            if (peek().type == TokenType::RBRACE) advance();
+        } else {
+            throw std::runtime_error("unexpected token in class body");
+        }
+    }
+
+    expect(TokenType::RBRACE, "expected } to close class");
+
+    return Node::make<ClassDefNode>(nameTok.value, parent, std::move(interfaces), std::move(members));
+}
+
+// ==========================================================
+//  Struct definition (simpler - no inheritance)
+//  struct Name { ... }
+// ==========================================================
+
+NodePtr Parser::parseStructDef() {
+    expect(TokenType::KW_STRUCT);
+    Token nameTok = expect(TokenType::IDENTIFIER, "expected struct name");
+    expect(TokenType::LBRACE, "expected { for struct body");
+
+    std::vector<ClassMemberNode> members;
+
+    while (!atEnd() && peek().type != TokenType::RBRACE) {
+        std::string visibility = "public";
+        bool isStatic = false;
+        bool isOverride = false;
+
+        while (true) {
+            if (peek().type == TokenType::KW_PUBLIC) { visibility = "public"; advance(); }
+            else if (peek().type == TokenType::KW_PRIVATE) { visibility = "private"; advance(); }
+            else if (peek().type == TokenType::KW_PROTECTED) { visibility = "protected"; advance(); }
+            else if (peek().type == TokenType::KW_STATIC) { isStatic = true; advance(); }
+            else break;
+        }
+
+        if (peek().type == TokenType::KW_DEF) {
+            advance();
+            Token methodName = expect(TokenType::IDENTIFIER, "expected method name");
+            expect(TokenType::LPAREN);
+            std::vector<std::string> params;
+            while (peek().type == TokenType::IDENTIFIER) {
+                TokenType next = peek(1).type;
+                if (next == TokenType::COMMA || next == TokenType::STMT_END || next == TokenType::LPAREN) {
+                    params.push_back(advance().value);
+                    if (peek().type == TokenType::COMMA) advance();
+                } else break;
+            }
+            expect(TokenType::STMT_END, "expected . after method params");
+            std::vector<NodePtr> body;
+            while (!atEnd() && peek().type != TokenType::RPAREN) {
+                try { body.push_back(parseStatement()); }
+                catch (const std::runtime_error&) {
+                    while (!atEnd() && peek().type != TokenType::STMT_END) advance();
+                    if (peek().type == TokenType::STMT_END) advance();
+                }
+            }
+            expect(TokenType::RPAREN, "expected )");
+            ClassMemberNode cm;
+            cm.visibility = visibility; cm.isStatic = isStatic; cm.isOverride = isOverride;
+            cm.name = methodName.value;
+            cm.value = Node::make<FuncDefNode>(methodName.value, std::move(params), std::move(body));
+            members.push_back(std::move(cm));
+        } else {
+            Token fieldTok = expect(TokenType::IDENTIFIER, "expected field name");
+            if (peek().type == TokenType::OP_ASSIGN) {
+                advance(); NodePtr val = parseExpr();
+                if (peek().type == TokenType::STMT_END) advance();
+                ClassMemberNode cm;
+                cm.visibility = visibility; cm.isStatic = isStatic; cm.isOverride = false;
+                cm.name = fieldTok.value; cm.value = std::move(val);
+                members.push_back(std::move(cm));
+            } else if (peek().type == TokenType::STMT_END) {
+                advance();
+                ClassMemberNode cm;
+                cm.visibility = visibility; cm.isStatic = isStatic; cm.isOverride = false;
+                cm.name = fieldTok.value; cm.value = nullptr;
+                members.push_back(std::move(cm));
+            } else throw std::runtime_error("unexpected token in struct body");
+        }
+    }
+
+    expect(TokenType::RBRACE, "expected } to close struct");
+    return Node::make<ClassDefNode>(nameTok.value, "", std::vector<std::string>(), std::move(members));
+}
+
+// ==========================================================
+//  Interface definition  interface Name { def meth(). }
+// ==========================================================
+
+NodePtr Parser::parseInterfaceDef() {
+    expect(TokenType::KW_INTERFACE);
+    Token nameTok = expect(TokenType::IDENTIFIER, "expected interface name");
+
+    if (peek().type == TokenType::KW_EXTENDS) {
+        advance();
+        while (peek().type == TokenType::IDENTIFIER) advance(); // skip parent interfaces
+    }
+
+    expect(TokenType::LBRACE, "expected { for interface body");
+
+    std::vector<ClassMemberNode> members;
+
+    while (!atEnd() && peek().type != TokenType::RBRACE) {
+        if (peek().type == TokenType::KW_DEF) {
+            advance();
+            Token methodName = expect(TokenType::IDENTIFIER, "expected method name");
+            expect(TokenType::LPAREN);
+            std::vector<std::string> params;
+            while (peek().type == TokenType::IDENTIFIER) {
+                TokenType next = peek(1).type;
+                if (next == TokenType::COMMA || next == TokenType::STMT_END || next == TokenType::LPAREN) {
+                    params.push_back(advance().value);
+                    if (peek().type == TokenType::COMMA) advance();
+                } else break;
+            }
+            if (peek().type == TokenType::STMT_END) advance();
+            if (peek().type == TokenType::RPAREN) advance();
+
+            auto emptyBody = std::vector<NodePtr>();
+            ClassMemberNode cm;
+            cm.visibility = "public"; cm.isStatic = false; cm.isOverride = false;
+            cm.name = methodName.value;
+            cm.value = Node::make<FuncDefNode>(methodName.value, std::move(params), std::move(emptyBody));
+            members.push_back(std::move(cm));
+        } else {
+            advance(); // skip unknown tokens
+        }
+    }
+
+    expect(TokenType::RBRACE, "expected } to close interface");
+    return Node::make<ClassDefNode>(nameTok.value, "", std::vector<std::string>(), std::move(members));
+}
+
+// ==========================================================
+//  new expression  new ClassName(args.)
+// ==========================================================
+
+NodePtr Parser::parseNewExpr() {
+    expect(TokenType::KW_NEW);
+    Token className = expect(TokenType::IDENTIFIER, "expected class name after new");
+    expect(TokenType::LPAREN, "expected ( after class name");
+
+    std::vector<NodePtr> args;
+    if (peek().type != TokenType::STMT_END && peek().type != TokenType::RPAREN) {
+        args.push_back(parseExpr());
+        while (peek().type == TokenType::COMMA) {
+            advance();
+            args.push_back(parseExpr());
+        }
+    }
+    if (peek().type == TokenType::STMT_END) advance();
+    if (peek().type == TokenType::RPAREN) advance();
+
+    return Node::make<NewExprNode>(className.value, std::move(args));
+}
+
+// ==========================================================
+//  yield  yield(expr.)
+// ==========================================================
+
+NodePtr Parser::parseYield() {
+    expect(TokenType::KW_YIELD);
+    expect(TokenType::LPAREN);
+    NodePtr val = parseExpr();
+    if (peek().type == TokenType::STMT_END) advance();
+    expect(TokenType::RPAREN, "expected ) after yield expression");
+    expect(TokenType::STMT_END, "expected . after yield");
+    return Node::make<YieldNode>(std::move(val));
+}
+
+// ==========================================================
+//  import  import "path"
+// ==========================================================
+
+NodePtr Parser::parseImport() {
+    expect(TokenType::KW_IMPORT);
+    Token pathTok = expect(TokenType::LIT_STRING, "expected string path after import");
+    expect(TokenType::STMT_END, "expected . after import");
+    return Node::make<ImportNode>(pathTok.value);
 }
 
 // ==========================================================
@@ -622,6 +1023,24 @@ NodePtr Parser::parseBinaryOp(int minPrec) {
             g.list = std::move(left);
             g.index = std::move(idx);
             left = std::move(get);
+            continue;
+        }
+
+        // Handle member access: expr.id or expr.id(args.)
+        if (peek().type == TokenType::OP_DOT || peek().type == TokenType::OP_ARROW) {
+            left = parsePostfixExpr(std::move(left));
+            continue;
+        }
+
+        // Handle 'as' type cast: expr as Type
+        if (peek().type == TokenType::KW_AS) {
+            advance();
+            Token typeTok = expect(TokenType::IDENTIFIER, "expected type name after as");
+            auto ac = Node::make<AsCastNode>();
+            auto& a = std::get<AsCastNode>(ac->data);
+            a.expr = std::move(left);
+            a.typeName = typeTok.value;
+            left = std::move(ac);
             continue;
         }
 
@@ -672,10 +1091,27 @@ NodePtr Parser::parsePrimary() {
             return Node::make<LiteralNode>(tok.value == "true");
         }
 
+        case TokenType::KW_NULL: {
+            advance();
+            return Node::make<NullNode>();
+        }
+
+        case TokenType::KW_THIS: {
+            advance();
+            return Node::make<ThisExprNode>();
+        }
+
+        case TokenType::KW_SUPER: {
+            advance();
+            return Node::make<SuperExprNode>();
+        }
+
+        case TokenType::KW_NEW: {
+            return parseNewExpr();
+        }
+
         case TokenType::IDENTIFIER:
         case TokenType::BUILTIN_INPUT: {
-            if (peek(1).type == TokenType::OP_DOT)
-                return parseNamespaceCall(tok, false);
             if (tok.type == TokenType::IDENTIFIER && peek(1).type == TokenType::LPAREN)
                 return parseFuncCallExpr(tok);
             advance();
@@ -715,27 +1151,24 @@ NodePtr Parser::parsePrimary() {
         }
 
         case TokenType::KW_RUN: {
-            // Function call inside an expression: run.name(args.).
-            // Consume run, ., name, (, args., ) but NOT the trailing STMT_END.
-            advance(); // run
+            advance();
             if (peek().type == TokenType::OP_DOT || peek().type == TokenType::STMT_END)
-                advance(); // .
-            else
-                expect(TokenType::STMT_END); // .
+                advance();
+            else expect(TokenType::STMT_END);
             Token nameTok = advance();
             if (nameTok.type != TokenType::IDENTIFIER
                 && nameTok.type != TokenType::BUILTIN_PRINT
                 && nameTok.type != TokenType::BUILTIN_INPUT
                 && nameTok.type != TokenType::BUILTIN_HTML)
                 throw std::runtime_error("expected function name after run.");
-            expect(TokenType::LPAREN); // (
+            expect(TokenType::LPAREN);
             std::vector<NodePtr> args;
             if (peek().type != TokenType::STMT_END && peek().type != TokenType::RPAREN) {
                 args.push_back(parseExpr());
                 while (peek().type == TokenType::COMMA) { advance(); args.push_back(parseExpr()); }
             }
-            if (peek().type == TokenType::STMT_END) advance(); // consume arg/no-arg terminator .
-            if (peek().type == TokenType::RPAREN) advance();    // consume )
+            if (peek().type == TokenType::STMT_END) advance();
+            if (peek().type == TokenType::RPAREN) advance();
             return Node::make<FuncCallNode>(nameTok.value, std::move(args));
         }
 

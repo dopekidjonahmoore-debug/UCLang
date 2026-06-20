@@ -6,6 +6,8 @@
 
 namespace UCLang {
 
+
+
 // ─────────────────────────────────────────────────────────────────
 //  Keyword table
 //  Maps raw identifier text → TokenType for every reserved word.
@@ -31,6 +33,32 @@ const std::unordered_map<std::string, TokenType> Lexer::s_keywords = {
     { "html",     TokenType::BUILTIN_HTML  },
     { "and",      TokenType::OP_AND       },
     { "or",       TokenType::OP_OR        },
+    // ── OOP keywords ─────────────────────────────────────────────
+    { "class",      TokenType::KW_CLASS      },
+    { "struct",     TokenType::KW_STRUCT     },
+    { "interface",  TokenType::KW_INTERFACE  },
+    { "extends",    TokenType::KW_EXTENDS    },
+    { "implements", TokenType::KW_IMPLEMENTS },
+    { "new",        TokenType::KW_NEW        },
+    { "this",       TokenType::KW_THIS       },
+    { "super",      TokenType::KW_SUPER      },
+    { "public",     TokenType::KW_PUBLIC     },
+    { "private",    TokenType::KW_PRIVATE    },
+    { "protected",  TokenType::KW_PROTECTED  },
+    { "override",   TokenType::KW_OVERRIDE   },
+    { "virtual",    TokenType::KW_VIRTUAL    },
+    { "abstract",   TokenType::KW_ABSTRACT   },
+    { "static",     TokenType::KW_STATIC     },
+    { "const",      TokenType::KW_CONST      },
+    { "yield",      TokenType::KW_YIELD      },
+    { "as",         TokenType::KW_AS         },
+    { "ref",        TokenType::KW_REF        },
+    { "var",        TokenType::KW_VAR        },
+    { "null",       TokenType::KW_NULL       },
+    { "import",     TokenType::KW_IMPORT     },
+    { "namespace",  TokenType::KW_NAMESPACE  },
+    { "get",        TokenType::KW_GET        },
+    { "set",        TokenType::KW_SET        },
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -166,6 +194,7 @@ Token Lexer::scanOperator() {
     if (a == '>' && b == '=') { advance(); advance(); return { TokenType::OP_GTE,    ">=", sl, sc }; }
     if (a == '!' && b == '=') { advance(); advance(); return { TokenType::OP_NEQ,    "!=", sl, sc }; }
     if (a == '<' && b == '=') { advance(); advance(); return { TokenType::OP_LTE,    "<=", sl, sc }; }
+    if (a == '-' && b == '>') { advance(); advance(); return { TokenType::OP_ARROW,  "->", sl, sc }; }
 
     // ── Single-char operators & punctuation ─────────────────────
     advance();
@@ -188,6 +217,8 @@ Token Lexer::scanOperator() {
         case ')': return { TokenType::RPAREN,     ")",  sl, sc };
         case '[': return { TokenType::LBRACKET,   "[",  sl, sc };
         case ']': return { TokenType::RBRACKET,   "]",  sl, sc };
+        case '{': return { TokenType::LBRACE,     "{",  sl, sc };
+        case '}': return { TokenType::RBRACE,     "}",  sl, sc };
         default:  return { TokenType::UNKNOWN, std::string(1, a), sl, sc };
     }
 }
@@ -398,6 +429,31 @@ const char* tokenTypeName(TokenType t) {
         case TokenType::KW_WHILE:        return "KW_WHILE";
         case TokenType::KW_BREAK:        return "KW_BREAK";
         case TokenType::KW_NEXT:         return "KW_NEXT";
+        case TokenType::KW_CLASS:        return "KW_CLASS";
+        case TokenType::KW_STRUCT:       return "KW_STRUCT";
+        case TokenType::KW_INTERFACE:    return "KW_INTERFACE";
+        case TokenType::KW_EXTENDS:      return "KW_EXTENDS";
+        case TokenType::KW_IMPLEMENTS:   return "KW_IMPLEMENTS";
+        case TokenType::KW_NEW:          return "KW_NEW";
+        case TokenType::KW_THIS:         return "KW_THIS";
+        case TokenType::KW_SUPER:        return "KW_SUPER";
+        case TokenType::KW_PUBLIC:       return "KW_PUBLIC";
+        case TokenType::KW_PRIVATE:      return "KW_PRIVATE";
+        case TokenType::KW_PROTECTED:    return "KW_PROTECTED";
+        case TokenType::KW_OVERRIDE:     return "KW_OVERRIDE";
+        case TokenType::KW_VIRTUAL:      return "KW_VIRTUAL";
+        case TokenType::KW_ABSTRACT:     return "KW_ABSTRACT";
+        case TokenType::KW_STATIC:       return "KW_STATIC";
+        case TokenType::KW_CONST:        return "KW_CONST";
+        case TokenType::KW_YIELD:        return "KW_YIELD";
+        case TokenType::KW_AS:           return "KW_AS";
+        case TokenType::KW_REF:          return "KW_REF";
+        case TokenType::KW_VAR:          return "KW_VAR";
+        case TokenType::KW_NULL:         return "KW_NULL";
+        case TokenType::KW_IMPORT:       return "KW_IMPORT";
+        case TokenType::KW_NAMESPACE:    return "KW_NAMESPACE";
+        case TokenType::KW_GET:          return "KW_GET";
+        case TokenType::KW_SET:          return "KW_SET";
         case TokenType::BUILTIN_PRINT:   return "BUILTIN_PRINT";
         case TokenType::BUILTIN_INPUT:   return "BUILTIN_INPUT";
         case TokenType::BUILTIN_HTML:    return "BUILTIN_HTML";
@@ -416,11 +472,14 @@ const char* tokenTypeName(TokenType t) {
         case TokenType::OP_AND:          return "OP_AND";
         case TokenType::STMT_END:        return "STMT_END";
         case TokenType::OP_DOT:          return "OP_DOT";
+        case TokenType::OP_ARROW:        return "OP_ARROW";
         case TokenType::COMMA:           return "COMMA";
         case TokenType::LPAREN:          return "LPAREN";
         case TokenType::RPAREN:          return "RPAREN";
         case TokenType::LBRACKET:        return "LBRACKET";
         case TokenType::RBRACKET:        return "RBRACKET";
+        case TokenType::LBRACE:          return "LBRACE";
+        case TokenType::RBRACE:          return "RBRACE";
         case TokenType::HTML_OPEN:       return "HTML_OPEN";
         case TokenType::HTML_CLOSE:      return "HTML_CLOSE";
         case TokenType::HTML_SELF_CLOSE: return "HTML_SELF_CLOSE";

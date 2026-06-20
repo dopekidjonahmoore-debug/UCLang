@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <cstdint>
+#include <unordered_map>
 
 namespace UCLang {
 
@@ -31,6 +32,20 @@ struct ReturnNode      { NodePtr value; };
 struct MultiAssignNode { std::vector<std::string> vars; NodePtr value; };
 struct GameLoopNode    { std::vector<NodePtr> updateBody; std::vector<NodePtr> drawBody; };
 
+// ── OOP nodes ──────────────────────────────────────────────
+struct ClassMemberNode { std::string visibility; bool isStatic; bool isOverride; std::string name; NodePtr value; };
+struct ClassDefNode    { std::string name; std::string parent; std::vector<std::string> interfaces; std::vector<ClassMemberNode> members; };
+struct NewExprNode     { std::string className; std::vector<NodePtr> args; };
+struct ThisExprNode    { };
+struct SuperExprNode   { };
+struct MemberCallNode  { NodePtr object; std::string member; std::vector<NodePtr> args; };
+struct MemberGetNode   { NodePtr object; std::string member; };
+struct MemberSetNode   { NodePtr object; std::string member; NodePtr value; };
+struct NullNode        { };
+struct YieldNode       { NodePtr value; };
+struct ImportNode      { std::string path; };
+struct AsCastNode      { NodePtr expr; std::string typeName; };
+
 struct Node {
     std::variant<
         std::monostate,
@@ -53,7 +68,18 @@ struct Node {
         HtmlNode,
         ReturnNode,
         MultiAssignNode,
-        GameLoopNode
+        GameLoopNode,
+        ClassDefNode,
+        NewExprNode,
+        ThisExprNode,
+        SuperExprNode,
+        MemberCallNode,
+        MemberGetNode,
+        MemberSetNode,
+        NullNode,
+        YieldNode,
+        ImportNode,
+        AsCastNode
     > data;
 
     template<typename T, typename... Args>

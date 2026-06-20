@@ -37,6 +37,33 @@ enum class TokenType {
     KW_NEXT,            // next
     KW_RESPONSE,        // response  (inside Input())
 
+    // ── OOP keywords ─────────────────────────────────────────────
+    KW_CLASS,           // class
+    KW_STRUCT,          // struct
+    KW_INTERFACE,       // interface
+    KW_EXTENDS,         // extends
+    KW_IMPLEMENTS,      // implements
+    KW_NEW,             // new
+    KW_THIS,            // this
+    KW_SUPER,           // super
+    KW_PUBLIC,          // public
+    KW_PRIVATE,         // private
+    KW_PROTECTED,       // protected
+    KW_OVERRIDE,        // override
+    KW_VIRTUAL,         // virtual
+    KW_ABSTRACT,        // abstract
+    KW_STATIC,          // static
+    KW_CONST,           // const
+    KW_YIELD,           // yield
+    KW_AS,              // as
+    KW_REF,             // ref
+    KW_VAR,             // var
+    KW_NULL,            // null
+    KW_IMPORT,          // import
+    KW_NAMESPACE,       // namespace
+    KW_GET,             // get (property getter)
+    KW_SET,             // set (property setter)
+
     // ── Built-in functions ────────────────────────────────────────
     BUILTIN_PRINT,      // Print
     BUILTIN_INPUT,      // Input
@@ -74,6 +101,9 @@ enum class TokenType {
     RPAREN,             // )
     LBRACKET,           // [
     RBRACKET,           // ]
+    LBRACE,             // {
+    RBRACE,             // }
+    OP_ARROW,           // ->
 
     // ── HTML-mode tokens (emitted when inside Html(...)) ──────────
     HTML_OPEN,          // <tagname

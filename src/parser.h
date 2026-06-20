@@ -27,6 +27,7 @@ private:
     NodePtr parseFuncDef();
     NodePtr parseFuncCall();
     NodePtr parseFuncCallExpr(const Token& nameTok);
+    NodePtr parseFuncCallStmt(const Token& nameTok);
     NodePtr parseIf();
     NodePtr parseWhile();
     NodePtr parseBreak();
@@ -40,6 +41,17 @@ private:
     NodePtr parseAssign(const Token& ident);
     NodePtr parseMultiAssign(const Token& ident);
     NodePtr parseTypeCheck(const Token& ident);
+
+    // ── OOP parsing ─────────────────────────────────────────
+    NodePtr parseClassDef();
+    NodePtr parseStructDef();
+    NodePtr parseInterfaceDef();
+    NodePtr parseNewExpr();
+    NodePtr parseMemberCall(NodePtr obj, const Token& member);
+    NodePtr parseMemberGet(NodePtr obj, const Token& member);
+    NodePtr parsePostfixExpr(NodePtr obj);
+    NodePtr parseYield();
+    NodePtr parseImport();
 
     NodePtr parseExpr();
     NodePtr parseBinaryOp(int minPrec = 1);
